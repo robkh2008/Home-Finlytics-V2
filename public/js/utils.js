@@ -75,7 +75,10 @@ function showConfirm(title, msg, icon, onConfirm) {
 function generateReceiptNumber(dateStr) {
     if (!dateStr) return 'REC-000000-0000';
     const datePart = dateStr.replace(/-/g, '').slice(0, 6); // YYYYMM
-    const count = state.transactions.filter(t => t.type === 'rent' && t.receiptNo?.startsWith('REC-' + datePart)).length + 1;
+    const count = state.transactions.filter(t => 
+        (t.type === 'rent' || (t.type === 'expense' && t.category === 'House Rent')) && 
+        t.receiptNo?.startsWith('REC-' + datePart)
+    ).length + 1;
     return `REC-${datePart}-${String(count).padStart(4, '0')}`;
 }
 
@@ -106,9 +109,13 @@ function getStringColor(str) {
 
 function getVisibleTransactions() {
     if (!state.transactions) return [];
-    if (state.userRole === 'admin') return state.transactions;
+    
+    // Globally ignore removed legacy types (income, settlement, lent, returned)
+    const validTxs = state.transactions.filter(tx => tx.type === 'expense' || tx.type === 'groceries');
+
+    if (state.userRole === 'admin') return validTxs;
     // For non-admin users, restrict access to Groceries and Rent only
-    return state.transactions.filter(tx => 
+    return validTxs.filter(tx => 
         tx.type === 'groceries' || (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
     );
 }

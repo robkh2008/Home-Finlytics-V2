@@ -77,6 +77,7 @@ export function saveStateToFirebase(appState) {
         updates['/appState/budgets'] = appState.budgets || {};
         updates['/appState/recurringTemplates'] = appState.recurringTemplates || [];
         updates['/appState/payers'] = appState.payers || [];
+        updates['/appState/transactions'] = null; // WIPE LEGACY DATA
     }
     
     updates['/appState/lastUpdated'] = appState.lastUpdated || Date.now();
@@ -118,6 +119,7 @@ export function listenToFirebaseState(onDataReceived, userRole) {
         // Exclude transaction nodes from this listener's data
         delete data.transactions_public;
         delete data.transactions_private;
+        delete data.transactions; // Prevent legacy data from bleeding in
         otherState = data;
         mergeAndCallback();
     });
