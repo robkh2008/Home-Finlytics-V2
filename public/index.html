@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#121212">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="images/icon-192.png">
+    <link rel="manifest" href="manifest.json">
+
+    <!-- iOS Splash Screens -->
+    <!-- iPhone 14 Pro Max / 15 Pro Max -->
+    <link rel="apple-touch-startup-image" href="images/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <!-- iPhone 12 / 13 / 14 / 15 -->
+    <link rel="apple-touch-startup-image" href="images/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <!-- iPhone X / 11 Pro / 12 Mini -->
+    <link rel="apple-touch-startup-image" href="images/splash-1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <title>Home Finlytics</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- html2canvas for Receipt Sharing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- CSS Files (ensure these exist) -->
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/receipt.css">
+
+    <!-- Other CSS (dashboard, transactions, etc.) if needed -->
+
+    <style media="print">
+        /* Analytics Print Styles */
+        body.printing-analytics * { visibility: hidden; }
+        body.printing-analytics #screenAnalytics, 
+        body.printing-analytics #screenAnalytics * { visibility: visible; }
+        body.printing-analytics #screenAnalytics { 
+            position: absolute; left: 0; top: 0; width: 100%; 
+            overflow: visible !important; height: auto !important;
+            padding: 0 !important; margin: 0 !important;
+        }
+        body.printing-analytics .app-content,
+        body.printing-analytics .screen-scroll,
+        body.printing-analytics #appShell,
+        body.printing-analytics body,
+        body.printing-analytics html {
+            overflow: visible !important; position: static !important; height: auto !important;
+        }
+        body.printing-analytics .bottom-tab-bar, 
+        body.printing-analytics .app-header, 
+        body.printing-analytics button { display: none !important; }
+        body.printing-analytics .card { 
+            box-shadow: none !important; border: 1px solid #ddd !important; 
+            break-inside: avoid; background: white !important; margin-bottom: 15px !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Splash Screen -->
+    <div id="splashScreen" class="splash-screen">
+        <div class="splash-icon"><i class="fas fa-chart-pie"></i></div>
+        <h1 style="font-weight:700;letter-spacing:-0.02em;">Home Finlytics</h1>
+        <div class="splash-loader"></div>
+    </div>
+
+    <!-- App Lock Screen -->
+    <div id="lockScreen" class="splash-screen" style="display:none; z-index:9998; background:var(--bg-primary);">
+        <div class="splash-icon" style="animation:none;"><i class="fas fa-lock"></i></div>
+        <h2 style="margin-bottom:8px;">App Locked</h2>
+        <p style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:24px;">Please authenticate to continue.</p>
+        <button id="unlockBtn" class="btn btn-primary"><i class="fas fa-fingerprint"></i> Unlock App</button>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <div class="modal-icon" id="confirmIcon"><i class="fas fa-exclamation-triangle"></i></div>
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage">Are you sure?</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="confirmCancel">Cancel</button>
+                <button class="btn btn-danger" id="confirmOk">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Shell -->
+    <div id="appShell" class="app-shell" style="display:none;">
+        <!-- Header -->
+        <header class="app-header">
+            <span class="header-logo"><i class="fas fa-chart-pie"></i> Home Finlytics</span>
+            <div class="header-right">
+                <button id="headerSyncBtn" class="icon-btn" title="Sync"><i class="fas fa-cloud-arrow-up"></i>
+                    <span class="sync-dot" id="syncStatusDot"></span></button>
+                <button id="settingsFloatingBtn" class="icon-btn" title="Settings"><i class="fas fa-cog"></i></button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="app-content" id="appContent">
+            <!-- Dashboard Screen -->
+            <section id="screenDashboard" class="screen active">
+                <div class="screen-scroll">
+                    <div class="summary-row" id="dashboardSummaryRow" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Expenses by Category</h3><div class="chart-wrap"><canvas id="dashPieChart"></canvas></div></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-line"></i> 6-Month Trend</h3><div class="chart-wrap"><canvas id="dashTrendChart"></canvas></div></div>
+                    <div class="quick-stats-row" id="dashboardQuickStats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-clock"></i> Recent Transactions</h3><div id="recentTxList"></div></div>
+                    <div class="card glass-card" id="budgetOverviewCard"><h3 class="card-title"><i class="fas fa-bullseye"></i> Budget Overview</h3><div id="budgetOverviewList"></div></div>
+                </div>
+            </section>
+
+            <!-- Transactions Screen -->
+            <section id="screenTransactions" class="screen">
+                <div class="screen-scroll">
+                    <div class="bulk-bar hidden" id="bulkActionBar"><span id="bulkCount">0 selected</span>
+                        <button class="btn btn-danger btn-xs" id="bulkDeleteBtn"><i class="fas fa-trash"></i> Delete Selected</button>
+                        <button class="btn btn-secondary btn-xs" id="bulkCancelBtn">Cancel</button></div>
+                    <div class="card glass-card filter-card">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <select id="filterType" class="form-select" style="flex:1;min-width:90px;"><option value="all">All</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option></select>
+                            <select id="filterCategory" class="form-select" style="flex:1;min-width:90px;"><option value="all">All Categories</option></select>
+                            <select id="filterSubcategory" class="form-select" style="flex:1;min-width:90px;"><option value="all">All Subcats</option></select>
+                            <input type="text" id="filterSearch" class="form-input" placeholder="Search..." style="flex:2;min-width:100px;">
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                            <input type="date" id="filterDateFrom" class="form-input" style="flex:1;min-width:100px;" title="From">
+                            <input type="date" id="filterDateTo" class="form-input" style="flex:1;min-width:100px;" title="To">
+                            <input type="number" id="filterAmountMin" class="form-input" placeholder="Min ₹" step="0.01" style="flex:1;min-width:70px;">
+                            <input type="number" id="filterAmountMax" class="form-input" placeholder="Max ₹" step="0.01" style="flex:1;min-width:70px;">
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+                            <select id="sortBy" class="form-select" style="flex:1;"><option value="date">Sort: Date</option><option value="amount">Sort: Amount</option><option value="category">Sort: Category</option></select>
+                            <button id="sortToggleBtn" class="icon-btn" title="Toggle order"><i class="fas fa-arrow-down"></i></button>
+                            <button id="clearFiltersBtn" class="btn btn-secondary btn-xs">Clear</button>
+                            <button id="bulkSelectToggleBtn" class="btn btn-secondary btn-xs">Select</button>
+                        </div>
+                    </div>
+                    <div id="transactionList"></div>
+                    <div id="txEmptyState" style="display:none;text-align:center;padding:40px;color:var(--text-tertiary);"><i class="fas fa-receipt" style="font-size:3rem;"></i><p>No transactions found</p></div>
+                </div>
+                <!-- Floating Clear Filters Button -->
+                <button id="floatingClearFiltersBtn" class="btn btn-danger" style="display:none; position:absolute; bottom:80px; left:50%; transform:translateX(-50%); z-index:100; border-radius:24px; box-shadow:0 4px 12px rgba(255,59,48,0.3); padding:10px 20px; align-items:center; gap:6px;">
+                    <i class="fas fa-times-circle"></i> Clear Filters
+                </button>
+            </section>
+
+            <!-- Add Transaction Screen -->
+            <section id="screenAdd" class="screen">
+                <div class="screen-scroll">
+                    <div class="card glass-card form-card">
+                        <h3 class="card-title"><i class="fas fa-plus-circle"></i> Add Transaction</h3>
+                        <form id="addTransactionForm">
+                            <div class="form-group"><label>Type <span class="required">*</span></label><select id="addType" class="form-select" required><option value="">Select</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option></select></div>
+                            <div class="form-group" id="addSplitGroup" style="display:none;"><label>Split equally with</label><div id="addSplitCheckboxes" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
+                            <div class="form-group" id="addHouseGroup" style="display:none;"><label>House</label><select id="addHouse" class="form-select"><option value="">Select</option></select></div>
+                            <div class="form-group"><label>Payment Method</label><select id="addPaymentMethod" class="form-select"><option value="cash">Cash</option><option value="upi">UPI</option><option value="bank">Bank Transfer</option><option value="icici card">ICICI Card</option><option value="scb card">SCB Card</option></select></div>
+                            <div class="form-group"><label>Category <span class="required">*</span></label><select id="addCategory" class="form-select" required><option value="">Select Category</option></select></div>
+                            <div class="form-group"><label>Subcategory</label><select id="addSubcategory" class="form-select"><option value="">Select Subcategory</option></select></div>
+                            <div class="form-group"><label>Amount (₹) <span class="required">*</span></label><input type="number" id="addAmount" class="form-input" placeholder="0.00" step="0.01" min="0.01" required></div>
+                            <div class="form-group"><label>Date</label><input type="date" id="addDate" class="form-input" required></div>
+                            <div class="form-group"><label>Notes</label><textarea id="addNotes" class="form-textarea" rows="2" placeholder="Optional..."></textarea></div>
+                            <div class="form-group"><label><input type="checkbox" id="addIsRecurring"> Save as recurring template</label></div>
+                            <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-save"></i> Save</button>
+                        </form>
+                    </div>
+                    <div class="card glass-card" id="recurringTemplatesCard"><h3 class="card-title"><i class="fas fa-redo"></i> Quick Templates</h3><div id="recurringTemplatesList"></div></div>
+                </div>
+            </section>
+
+            <!-- Analytics Screen -->
+            <section id="screenAnalytics" class="screen">
+                <div class="screen-scroll">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:space-between;margin-bottom:12px;">
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-sm btn-secondary period-btn active" data-period="month">Month</button>
+                            <button class="btn btn-sm btn-secondary period-btn" data-period="year">Year</button>
+                            <button class="btn btn-sm btn-secondary period-btn" data-period="ytd">YTD</button>
+                        </div>
+                        <button class="btn btn-sm btn-primary" id="exportAnalyticsPDFBtn"><i class="fas fa-file-pdf"></i> Export PDF</button>
+                    </div>
+                    <div id="analyticsSummaryRow" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-users"></i> Spender Breakdown</h3><div class="chart-wrap"><canvas id="analyticsSpenderBreakdown"></canvas></div></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-handshake"></i> Split Balances</h3><div id="analyticsSplitBalances" style="padding:10px 0;"></div></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-balance-scale"></i> Balance Trend</h3><canvas id="analyticsBalanceTrend"></canvas></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-tags"></i> Top Categories</h3><canvas id="analyticsTopCategories"></canvas></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-layer-group"></i> Subcategory Groups</h3><div class="chart-wrap"><canvas id="analyticsSubcatGroups"></canvas></div></div>
+                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-calendar-alt"></i> Monthly Breakdown</h3><canvas id="analyticsMonthlyBreakdown"></canvas></div>
+                </div>
+            </section>
+
+            <!-- Receipt Screen -->
+            <section id="screenReceipt" class="screen">
+                <div class="screen-scroll">
+                    <div class="card glass-card form-card">
+                        <h3 class="card-title"><i class="fas fa-file-invoice"></i> Rent Receipt</h3>
+                        <form id="receiptForm">
+                            <div class="form-group"><label>House <span class="required">*</span></label><select id="receiptHouse" class="form-select" required><option value="">Select</option></select></div>
+                            <div class="form-group"><label>Period (Month)</label><input type="month" id="receiptMonth" class="form-input" required></div>
+                            <div class="form-group"><label>Date of Issue</label><input type="date" id="receiptIssueDate" class="form-input" required></div>
+                            <div class="form-group"><label>Payment Mode</label><select id="receiptPaymentMode" class="form-select">
+                                <option value="cash">Cash</option>
+                                <option value="bank transfer">Bank Transfer</option>
+                                <option value="cheque">Cheque</option>
+                                <option value="upi">UPI</option>
+                            </select></div>
+                            <div class="form-group"><label>Rent (₹)</label><input type="number" id="receiptRent" class="form-input" readonly></div>
+                            <div><label style="cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="includeWaterBill"> Water Bill</label><input type="number" id="waterBillAmount" class="form-input" placeholder="₹" style="display:none;margin-top:4px;"></div>
+                            <div><label style="cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="includeMotorBill"> Motor Bill</label><input type="number" id="motorBillAmount" class="form-input" placeholder="₹" style="display:none;margin-top:4px;"></div>
+                            <div><label style="cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="includeElectricBill"> Electric (₹8/unit)</label><div style="display:none;margin-top:4px;" id="electricInputs"><input type="number" id="currentUnit" class="form-input" placeholder="Current units"><input type="number" id="previousUnit" class="form-input" placeholder="Previous units" style="margin-top:4px;"><span id="electricCalcResult" style="font-size:var(--font-size-sm);color:var(--text-secondary);">Units: 0 | ₹0.00</span></div></div>
+                            <div class="form-group"><label>Adjustment 1</label><div style="display:flex;gap:4px;"><select id="adj1Type" class="form-select" style="width:60px;"><option value="add">+</option><option value="deduct">-</option></select><input type="number" id="adj1Amount" class="form-input" placeholder="₹"><input type="text" id="adj1Comment" class="form-input" placeholder="Comment"></div></div>
+                            <div class="form-group"><label>Adjustment 2</label><div style="display:flex;gap:4px;"><select id="adj2Type" class="form-select" style="width:60px;"><option value="add">+</option><option value="deduct">-</option></select><input type="number" id="adj2Amount" class="form-input" placeholder="₹"><input type="text" id="adj2Comment" class="form-input" placeholder="Comment"></div></div>
+                            <div id="receiptTotalPreview" style="font-weight:700;font-size:var(--font-size-lg);margin:8px 0;">Total: ₹0.00</div>
+                            <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-print"></i> Generate</button>
+                        </form>
+                    </div>
+                    <div id="receiptTotalPreviewForm" class="receipt-total-form" style="font-weight:700;font-size:var(--font-size-lg);margin:8px 0;">Total: ₹0.00</div>
+
+                    <div class="card glass-card receipt-preview-card hidden" id="receiptPreviewCard">
+                        <h3 class="card-title"><i class="fas fa-eye"></i> Receipt Preview</h3>
+                        <div class="receipt-paper" id="receiptPaper"></div>
+                        <div id="receiptTotalPreviewDisplay" class="receipt-total-preview" style="margin-top:8px;"></div>
+                        <button class="btn btn-secondary btn-full" id="printReceiptBtn" style="margin-top:8px;">
+                            <i class="fas fa-print"></i> Print Receipt</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Screen -->
+            <section id="screenSettings" class="screen">
+                <div class="screen-scroll">
+                    <!-- Theme Toggle -->
+                    <div class="card glass-card settings-card">
+                        <h3 class="card-title"><i class="fas fa-palette"></i> Appearance</h3>
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <span>Dark Mode</span>
+                            <div class="toggle-switch-wrap" id="themeToggleWrap" style="cursor:pointer;">
+                                <div class="toggle-switch-track" id="themeToggleTrack">
+                                    <div class="toggle-switch-thumb"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+                            <span>Font Size</span>
+                            <select id="fontSizeSelect" class="form-select" style="width:120px;">
+                                <option value="13">Small</option>
+                                <option value="15" selected>Medium</option>
+                                <option value="17">Large</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Security -->
+                    <div class="card glass-card settings-card">
+                        <h3 class="card-title"><i class="fas fa-shield-alt"></i> Security</h3>
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <div>
+                                <div style="font-weight:500;">App Lock</div>
+                                <div style="font-size:0.75rem;color:var(--text-secondary);">Require Biometrics/PIN to open</div>
+                            </div>
+                            <div class="toggle-switch-wrap" id="appLockToggleWrap" style="cursor:pointer;">
+                                <div class="toggle-switch-track" id="appLockToggleTrack">
+                                    <div class="toggle-switch-thumb"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Currency -->
+                    <div class="card glass-card settings-card">
+                        <h3 class="card-title"><i class="fas fa-coins"></i> Currency</h3>
+                        <select id="currencySelect" class="form-select">
+                            <option value="₹">₹ Indian Rupee</option>
+                            <option value="€">€ Euro</option>
+                            <option value="$">$ US Dollar</option>
+                            <option value="£">£ British Pound</option>
+                            <option value="¥">¥ Chinese Yuan</option>
+                        </select>
+                    </div>
+                    <!-- Budgets -->
+                    <div class="card glass-card settings-card">
+                        <h3 class="card-title"><i class="fas fa-bullseye"></i> Monthly Budget Limits</h3>
+                        <div id="budgetSettingsList"></div>
+                        <div class="admin-only" style="display:flex;gap:6px;margin-top:8px;"><select id="budgetCatSelect" class="form-select" style="flex:1;"></select><input type="number" id="budgetLimitInput" class="form-input" placeholder="Limit ₹" style="width:100px;"><button id="addBudgetBtn" class="btn btn-primary btn-xs">Set</button></div>
+                    </div>
+                    <!-- Manage Categories & Subcategories -->
+                    <div class="card glass-card settings-card">
+                        <h3 class="card-title"><i class="fas fa-tags"></i> Manage Categories & Subcategories</h3>
+                        <div class="form-group"><label>Category Type</label>
+                            <select id="settingsCatType" class="form-select">
+                                <option value="expense">Expense</option>
+                                <option value="groceries">Groceries</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Select Category to Manage Subcategories</label>
+                            <select id="settingsCategorySelect" class="form-select">
+                                <option value="">-- Choose Category --</option>
+                            </select>
+                        </div>
+                        <div id="settingsCatList"></div>
+                        <div id="subcatManagement" style="margin-top:10px;">
+                            <h4 style="font-size:var(--font-size-sm);">Subcategories</h4>
+                            <div id="subcatList"></div>
+                        <div class="admin-only" style="display:flex;gap:4px;margin-top:6px;">
+                                <input type="text" id="newSubcatName" class="form-input" placeholder="New subcategory">
+                                <button id="addSubcatBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
+                            </div>
+                        </div>
+                    <div class="admin-only" style="display:flex;gap:4px;margin-top:12px;">
+                            <input type="text" id="newCatName" class="form-input" placeholder="New category name">
+                            <input type="color" id="newCatColor" class="form-color" value="#4CAF50">
+                            <button id="addCatBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add Category</button>
+                        </div>
+                    </div>
+                    <!-- Manage Houses -->
+                    <div class="card glass-card settings-card">
+                        <h3 class="card-title"><i class="fas fa-home"></i> Manage Houses</h3>
+                        <div id="settingsHouseList"></div>
+                        <div class="admin-only" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"><input type="text" id="newHouseNo" class="form-input" placeholder="No." style="width:60px;"><input type="text" id="newHouseAddress" class="form-input" placeholder="Address" style="flex:1;"><input type="text" id="newHouseTenant" class="form-input" placeholder="Tenant" style="width:80px;"><input type="text" id="newHouseOwner" class="form-input" placeholder="Owner" style="width:80px;"><input type="number" id="newHouseRent" class="form-input" placeholder="Rent ₹" style="width:80px;"><button id="addHouseBtn" class="btn btn-primary btn-xs">Add</button></div>
+                    </div>
+                    <!-- Manage Payers -->
+                    <div class="card glass-card settings-card admin-only">
+                        <h3 class="card-title"><i class="fas fa-users"></i> Manage Payer Names</h3>
+                        <div id="payerList"></div>
+                        <div style="display:flex;gap:4px;margin-top:8px;">
+                            <input type="text" id="newPayerName" class="form-input" placeholder="Add payer name">
+                            <button id="addPayerBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
+                        </div>
+                    </div>
+                    <!-- App Installation -->
+                    <div class="card glass-card settings-card" id="installAppCard" style="display:none;">
+                        <h3 class="card-title"><i class="fas fa-mobile-alt"></i> Install App</h3>
+                        <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;">Install Home Finlytics on your device for quick access and offline use.</p>
+                        <button id="installAppBtn" class="btn btn-primary btn-full"><i class="fas fa-download"></i> Install App</button>
+                    </div>
+                    <!-- Data Management -->
+                    <div class="card glass-card settings-card admin-only">
+                        <h3 class="card-title"><i class="fas fa-database"></i> Data Management</h3>
+                        <button id="exportDataBtn" class="btn btn-secondary btn-full"><i class="fas fa-download"></i> Export JSON</button>
+                        <button id="exportCSVBtn" class="btn btn-secondary btn-full"><i class="fas fa-file-csv"></i> Export CSV</button>
+                        <button id="importDataBtn" class="btn btn-secondary btn-full"><i class="fas fa-upload"></i> Import JSON</button>
+                        <input type="file" id="importFileInput" accept=".json" style="display:none;">
+                        <button id="importCSVBtn" class="btn btn-secondary btn-full"><i class="fas fa-file-import"></i> Import CSV</button>
+                        <input type="file" id="importCSVInput" accept=".csv" style="display:none;">
+                        <button id="clearAllDataBtn" class="btn btn-danger btn-full"><i class="fas fa-trash-alt"></i> Clear All Data</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Tab Bar (no stray buttons) -->
+        <nav class="bottom-tab-bar">
+            <button class="tab-btn active" data-screen="screenDashboard"><i class="fas fa-th-large"></i><span>Home</span></button>
+            <button class="tab-btn" data-screen="screenTransactions"><i class="fas fa-list-ul"></i><span>Transactions</span></button>
+            <button class="tab-btn tab-btn-add" data-screen="screenAdd"><div class="add-btn-circle"><i class="fas fa-plus"></i></div><span>Add</span></button>
+            <button class="tab-btn" data-screen="screenAnalytics"><i class="fas fa-chart-bar"></i><span>Analytics</span></button>
+            <button class="tab-btn" data-screen="screenReceipt"><i class="fas fa-file-invoice"></i><span>Receipt</span></button>
+        </nav>
+    </div>
+
+    <!-- JavaScript Files (order matters) -->
+    <script src="data/defaultData.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/categories.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/transactions.js"></script>
+    <script src="js/addTransaction.js"></script>
+    <script src="js/analytics.js"></script>
+    <script src="js/receiptGenerator.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/app.js"></script>
+    <script type="module" src="js/firebase-sync.js"></script>
+
+    <!-- Register Service Worker for PWA -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => {
+                        console.log('Service Worker registered', reg);
+
+                        // Listen for updates to the service worker
+                        reg.addEventListener('updatefound', () => {
+                            const newWorker = reg.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                // If the new worker is installed and there is an existing controller, it's an update.
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    showUpdateToast(newWorker);
+                                }
+                            });
+                        });
+                    })
+                    .catch(err => console.error('Service Worker registration failed', err));
+            });
+
+            // Reload the page when the new service worker takes control
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    refreshing = true;
+                    window.location.reload();
+                }
+            });
+        }
+
+        // Custom UI to prompt the user to reload and apply the update
+        function showUpdateToast(newWorker) {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `<div style="display:flex; flex-direction:column; gap:10px;"><div style="font-weight:600;"><i class="fas fa-arrow-alt-circle-down" style="color:var(--accent);margin-right:6px;"></i> Update Available</div><button id="reloadUpdateBtn" class="btn btn-primary btn-sm">Reload to Update</button></div>`;
+            container.appendChild(toast);
+            
+            document.getElementById('reloadUpdateBtn').addEventListener('click', () => newWorker.postMessage({ type: 'SKIP_WAITING' }));
+        }
+    </script>
+</body>
+</html>
