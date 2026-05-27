@@ -49,24 +49,38 @@ function showToast(msg, icon = 'info-circle') {
     
     // Limit on-screen toasts to 3 for better UX
     while (container.childElementCount >= 3) {
-        container.firstChild.remove();
+        const old = container.firstChild;
+        // Clear pending removal timeout to prevent stale callbacks
+        if (old._toastTimer) clearTimeout(old._toastTimer);
+        old.remove();
     }
 
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `<i class="fas fa-${escapeHTML(icon)}" style="margin-right:6px;"></i> ${escapeHTML(msg)}`;
     container.appendChild(toast);
-    setTimeout(() => {
+    
+    toast._toastTimer = setTimeout(() => {
+        toast._toastTimer = null;
         toast.classList.add('removing');
         toast.addEventListener('animationend', () => {
             if (toast.parentNode) toast.remove();
-        });
+        }, { once: true });
     }, 2000);
 }
+
+let _confirmCleanup = null;
 
 function showConfirm(title, msg, icon, onConfirm, requiredText = null) {
     const modal = document.getElementById('confirmModal');
     if (!modal) return;
+    
+    // Clean up previous listeners if modal was already open
+    if (_confirmCleanup) {
+        _confirmCleanup();
+        _confirmCleanup = null;
+    }
+    
     document.getElementById('confirmTitle').textContent = title;
     document.getElementById('confirmMessage').textContent = msg;
     document.getElementById('confirmIcon').innerHTML = `<i class="fas fa-${escapeHTML(icon)}"></i>`;
@@ -96,15 +110,21 @@ function showConfirm(title, msg, icon, onConfirm, requiredText = null) {
 
     const handler = () => {
         modal.style.display = 'none';
-        okBtn.removeEventListener('click', handler);
-        cancelBtn.removeEventListener('click', cancelHandler);
+        cleanup();
         onConfirm();
     };
     const cancelHandler = () => {
         modal.style.display = 'none';
+        cleanup();
+    };
+    
+    const cleanup = () => {
         okBtn.removeEventListener('click', handler);
         cancelBtn.removeEventListener('click', cancelHandler);
+        _confirmCleanup = null;
     };
+    
+    _confirmCleanup = cleanup;
     okBtn.addEventListener('click', handler);
     cancelBtn.addEventListener('click', cancelHandler);
 }
@@ -162,9 +182,15 @@ function getVisibleTransactions() {
     
     if (state.userRole === 'admin') return state.transactions;
     
-    // For non-admin users, restrict access to Groceries and Rent only
+    // For non-admin users, restrict to public/shared transaction types only
+    // Public types: groceries, rent, lent, returned, settlement, and House Rent expenses
     return state.transactions.filter(tx => 
-        tx.type === 'groceries' || (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
+        tx.type === 'groceries' || 
+        tx.type === 'rent' ||
+        tx.type === 'lent' ||
+        tx.type === 'returned' ||
+        tx.type === 'settlement' ||
+        (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
     );
 }
 

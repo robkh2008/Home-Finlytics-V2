@@ -69,14 +69,6 @@ function refreshAddForm() {
 
     refreshAddFormCategories();
     const type = document.getElementById('addType')?.value || '';
-    const payerGroup = document.getElementById('addPayerGroup');
-    if (payerGroup) {
-        payerGroup.style.display = (['groceries', 'expense', 'settlement', 'lent', 'returned'].includes(type)) ? 'block' : 'none';
-        const label = payerGroup.querySelector('label');
-        if (label) {
-            label.textContent = type === 'lent' ? 'Lent to' : type === 'returned' ? 'Returned by' : 'Payer';
-        }
-    }
     document.getElementById('addHouseGroup').style.display = type === 'rent' ? 'block' : 'none';
 
     // Populate houses
@@ -126,6 +118,15 @@ function setupCustomSubcategoryUI() {
             <button type="button" id="addCustomSubcatBtn" class="btn btn-xs btn-primary">Save</button>
         `;
         subSelect.parentNode.insertBefore(row, subSelect.nextSibling);
+        
+        // Bind event listeners immediately after creating the elements
+        document.getElementById('addCustomSubcatBtn')?.addEventListener('click', addCustomSubcategoryToCurrentCategory);
+        document.getElementById('addCustomSubcatInput')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addCustomSubcategoryToCurrentCategory();
+            }
+        });
     }
 }
 
@@ -137,8 +138,22 @@ function addCustomSubcategoryToCurrentCategory() {
     const subName = document.getElementById('addCustomSubcatInput')?.value.trim();
     if (!catName || !subName) return;
 
-    const cats = state.categories?.[type] || [];
-    const cat = cats.find(c => c.name === catName);
+    // FIX: Search across all category types to find the matching category
+    let cat = null;
+    let foundType = type;
+    if (type && state.categories?.[type]) {
+        const cats = Object.values(state.categories[type]).filter(Boolean);
+        cat = cats.find(c => c.name === catName);
+    }
+    if (!cat) {
+        ['expense', 'groceries'].forEach(t => {
+            if (state.categories?.[t] && !cat) {
+                const cats = Object.values(state.categories[t]).filter(Boolean);
+                cat = cats.find(c => c.name === catName);
+                if (cat) foundType = t;
+            }
+        });
+    }
     if (!cat) return;
     if (!cat.subcategories) cat.subcategories = [];
     if (cat.subcategories.some(s => s.toLowerCase() === subName.toLowerCase())) {
@@ -154,8 +169,10 @@ function addCustomSubcategoryToCurrentCategory() {
     if (subSelect) subSelect.value = subName;
 
     // Hide the custom input row
-    document.getElementById('addCustomSubcatRow').style.display = 'none';
-    document.getElementById('addCustomSubcatInput').value = '';
+    const customRow = document.getElementById('addCustomSubcatRow');
+    if (customRow) customRow.style.display = 'none';
+    const customInput = document.getElementById('addCustomSubcatInput');
+    if (customInput) customInput.value = '';
     showToast('Subcategory added!', 'check-circle');
 }
 

@@ -11,7 +11,15 @@ function refreshAddFormCategories() {
             } else if (type === 'settlement') {
                 catSelect.innerHTML = '<option value="Settlement" selected>Settlement</option>';
             } else {
-                const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : (state.categories?.['expense'] ? Object.values(state.categories['expense']).filter(Boolean) : []);
+                // Determine the source category list. For non-admin users
+                // with no type selected, default to groceries (what they can see).
+                let sourceType = type;
+                if (!sourceType || !state.categories?.[sourceType]) {
+                    // Fallback: non-admin users see only groceries categories,
+                    // admin users see expense categories when type is empty.
+                    sourceType = (state.userRole === 'admin') ? 'expense' : 'groceries';
+                }
+                const cats = state.categories?.[sourceType] ? Object.values(state.categories[sourceType]).filter(Boolean) : [];
                 catSelect.innerHTML = '<option value="">Select</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
             }
         }
@@ -31,7 +39,22 @@ function updateSubcategoryDropdown() {
     let optionsHTML = '<option value="">Select</option>';
 
     if (catName) {
-        const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : [];
+        // FIX: Search across ALL category types when type is empty or not matching
+        let cats = [];
+        if (type && state.categories?.[type]) {
+            cats = Object.values(state.categories[type]).filter(Boolean);
+        }
+        // If no cats found for the specific type, search all category collections
+        if (cats.length === 0) {
+            ['expense', 'groceries'].forEach(t => {
+                if (state.categories?.[t]) {
+                    const found = Object.values(state.categories[t]).filter(Boolean).filter(c => c.name === catName);
+                    if (found.length > 0) cats = cats.concat(found);
+                }
+            });
+            // Deduplicate
+            cats = cats.filter((c, i, arr) => arr.findIndex(x => x.name === c.name) === i);
+        }
         const cat = cats.find(c => c.name === catName);
 
         const subs = cat && cat.subcategories ? Object.values(cat.subcategories).filter(Boolean) : [];
@@ -72,6 +95,8 @@ function updateSubcategoryDropdown() {
         } else {
             // Disable the dropdown if no category is selected
             subSelect.disabled = true;
+            // Show a helpful placeholder
+            optionsHTML = '<option value="">-- Select a category first --</option>';
         }
 
         // Inject into the DOM exactly once

@@ -11,13 +11,6 @@
     <link rel="apple-touch-icon" href="/images/icon-192.png">
     <link rel="manifest" href="/manifest.json">
 
-    <!-- iOS Splash Screens -->
-    <!-- iPhone 14 Pro Max / 15 Pro Max -->
-    <link rel="apple-touch-startup-image" href="/images/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
-    <!-- iPhone 12 / 13 / 14 / 15 -->
-    <link rel="apple-touch-startup-image" href="/images/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
-    <!-- iPhone X / 11 Pro / 12 Mini -->
-    <link rel="apple-touch-startup-image" href="/images/splash-1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
     <title>Home Finlytics</title>
 
     <!-- Preconnect to CDNs for faster DNS resolution -->
@@ -104,6 +97,7 @@
         <header class="app-header">
             <span class="header-logo"><i class="fas fa-chart-pie"></i> Home Finlytics</span>
             <div class="header-right">
+                <span id="headerUserName" class="header-user-name" style="display:none;"></span>
                 <button id="headerSyncBtn" class="icon-btn" title="Sync" aria-label="Sync Data Status"><i class="fas fa-cloud-arrow-up"></i>
                     <span class="sync-dot" id="syncStatusDot"></span></button>
                 <button id="settingsFloatingBtn" class="icon-btn" title="Settings" aria-label="Open Settings"><i class="fas fa-cog"></i></button>
@@ -242,7 +236,7 @@
                     <div class="card glass-card receipt-preview-card hidden" id="receiptPreviewCard">
                         <h3 class="card-title"><i class="fas fa-eye"></i> Receipt Preview</h3>
                         <div class="receipt-paper" id="receiptPaper"></div>
-                        <div id="receiptTotalPreviewDisplay" class="receipt-total-preview" style="margin-top:8px;"></div>
+                        <div class="receipt-total-preview" style="margin-top:8px;"></div>
                         <button class="btn btn-secondary btn-full" id="printReceiptBtn" style="margin-top:8px;">
                             <i class="fas fa-print"></i> Print Receipt</button>
                     </div>

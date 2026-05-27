@@ -45,10 +45,21 @@ function refreshSettings() {
     const houseList = document.getElementById('settingsHouseList');
     if (houseList) {
         const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
-        houseList.innerHTML = houses.map(h => `
-            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
-                <span>H${escapeHTML(h.houseNo)} · ${escapeHTML(h.address)} · Tenant: ${escapeHTML(h.tenant)} · Owner: ${escapeHTML(h.owner)} · Rent: ${formatCurrency(h.rent)}</span>
-                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-house-btn" data-id="${escapeHTML(h.id)}"><i class="fas fa-times"></i></button>` : ''}
+        houseList.innerHTML = houses.length === 0
+            ? '<p style="color:var(--text-tertiary);">No houses added yet.</p>'
+            : houses.map(h => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--divider);">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;">H${escapeHTML(h.houseNo)} — ${escapeHTML(h.address)}</div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">
+                        Tenant: ${escapeHTML(h.tenant)} · Owner: ${escapeHTML(h.owner)} · Rent: ${formatCurrency(h.rent)}
+                    </div>
+                </div>
+                ${isAdmin ? `
+                <div style="display:flex;gap:4px;flex-shrink:0;">
+                    <button class="btn btn-xs btn-secondary edit-house-btn" data-id="${escapeHTML(h.id)}" title="Edit House"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-xs btn-danger remove-house-btn" data-id="${escapeHTML(h.id)}" title="Remove House"><i class="fas fa-times"></i></button>
+                </div>` : ''}
             </div>`).join('');
     }
 }
@@ -87,9 +98,22 @@ function refreshSubcategoryList(cachedType = null) {
         container.innerHTML = '<p style="color:var(--text-tertiary);">Select a category to manage subcategories.</p>';
         return;
     }
-    const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : [];
-    const cat = cats.find(c => c.name === catName);
-    if (!cat) { container.innerHTML = ''; return; }
+    // FIX: Search across all category types for the matching category name
+    let cats = [];
+    if (state.categories?.[type]) {
+        cats = Object.values(state.categories[type]).filter(Boolean);
+    }
+    let cat = cats.find(c => c.name === catName);
+    if (!cat) {
+        // Fallback: search other category types
+        ['expense', 'groceries'].forEach(t => {
+            if (t !== type && state.categories?.[t] && !cat) {
+                const otherCats = Object.values(state.categories[t]).filter(Boolean);
+                cat = otherCats.find(c => c.name === catName);
+            }
+        });
+    }
+    if (!cat) { container.innerHTML = '<p style="color:var(--text-tertiary);">Category not found.</p>'; return; }
     const subs = cat.subcategories ? Object.values(cat.subcategories).filter(Boolean) : [];
     container.innerHTML = subs.map(sub => `
         <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--divider);">
@@ -108,6 +132,61 @@ function renderPayerList() {
             <span>${escapeHTML(p)}</span>
             ${isAdmin ? `<button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>` : ''}
         </div>`).join('') || '<p style="color:var(--text-tertiary);">No payers added.</p>';
+}
+
+// Edit house — populates the add form fields with existing house data
+function editHouseUI(houseId) {
+    const house = (state.houses || []).find(h => h.id === houseId);
+    if (!house) return;
+    
+    document.getElementById('newHouseNo').value = house.houseNo || '';
+    document.getElementById('newHouseAddress').value = house.address || '';
+    document.getElementById('newHouseTenant').value = house.tenant || '';
+    document.getElementById('newHouseOwner').value = house.owner || '';
+    document.getElementById('newHouseRent').value = house.rent || '';
+    
+    // Change the Add button to an Update button
+    const addBtn = document.getElementById('addHouseBtn');
+    if (addBtn) {
+        addBtn.innerHTML = '<i class="fas fa-save"></i> Update';
+        addBtn.dataset.editingHouseId = houseId;
+    }
+    
+    // Scroll to the form
+    document.getElementById('newHouseNo')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Editing house — modify fields and click Update', 'edit');
+}
+
+// Update house — called by the modified addHouseBtn handler
+function updateHouse(houseId) {
+    const idx = (state.houses || []).findIndex(h => h.id === houseId);
+    if (idx < 0) return;
+    
+    state.houses[idx] = {
+        ...state.houses[idx],
+        houseNo: document.getElementById('newHouseNo').value.trim(),
+        address: document.getElementById('newHouseAddress').value.trim(),
+        tenant: document.getElementById('newHouseTenant').value.trim(),
+        owner: document.getElementById('newHouseOwner').value.trim(),
+        rent: parseFloat(document.getElementById('newHouseRent').value) || 0,
+    };
+    
+    if (!state.houses[idx].houseNo || !state.houses[idx].tenant) {
+        showToast('Fill House No. and Tenant', 'exclamation-triangle');
+        return;
+    }
+    
+    saveState();
+    // Reset button and clear fields
+    const addBtn = document.getElementById('addHouseBtn');
+    if (addBtn) {
+        addBtn.innerHTML = '<i class="fas fa-plus"></i> Add';
+        delete addBtn.dataset.editingHouseId;
+    }
+    ['newHouseNo', 'newHouseAddress', 'newHouseTenant', 'newHouseOwner', 'newHouseRent'].forEach(id => document.getElementById(id).value = '');
+    refreshSettings();
+    refreshAll();
+    showToast('House updated!', 'home');
 }
 
 function populateBudgetCategories() {

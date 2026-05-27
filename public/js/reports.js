@@ -359,6 +359,7 @@ async function renderAnalyticsCharts(filteredTxs) {
     // 6. Split Balances
     const splitContainer = document.getElementById('analyticsSplitBalances');
     if (splitContainer) {
+        const myName = (state.currentUser && state.currentUser.name) ? state.currentUser.name : 'Me';
         const balances = {}; // Pair tracker
         filtered.forEach(t => {
             // Handle settlement payments
@@ -375,21 +376,21 @@ async function renderAnalyticsCharts(filteredTxs) {
                     balances[pairKey] -= amount; // p2 paid p1, reducing p2's debt
                 }
             }
-            // Handle Lent / Returned to "Me"
+            // Handle Lent / Returned to the current user
             else if (t.type === 'lent' && t.payer) {
                 const amount = parseFloat(t.amount) || 0;
-                const [p1, p2] = ['Me', t.payer].sort();
+                const [p1, p2] = [myName, t.payer].sort();
                 const pairKey = `${p1}|${p2}`;
                 if (!balances[pairKey]) balances[pairKey] = 0;
-                if ('Me' === p1) balances[pairKey] += amount;
+                if (myName === p1) balances[pairKey] += amount;
                 else balances[pairKey] -= amount;
             }
             else if (t.type === 'returned' && t.payer) {
                 const amount = parseFloat(t.amount) || 0;
-                const [p1, p2] = ['Me', t.payer].sort();
+                const [p1, p2] = [myName, t.payer].sort();
                 const pairKey = `${p1}|${p2}`;
                 if (!balances[pairKey]) balances[pairKey] = 0;
-                if ('Me' === p1) balances[pairKey] -= amount;
+                if (myName === p1) balances[pairKey] -= amount;
                 else balances[pairKey] += amount;
             }
             // Handle regular split expenses
@@ -419,7 +420,7 @@ async function renderAnalyticsCharts(filteredTxs) {
             const creditor = amt > 0 ? p1 : p2;
             const settledAmt = Math.abs(amt);
             
-            splitHtml += `<div class="split-balance-row" data-debtor="${escapeHTML(debtor)}" data-creditor="${escapeHTML(creditor)}" data-amount="${settledAmt}" style="padding:8px 0;border-bottom:1px solid var(--divider);font-size:0.95rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background 0.2s;" title="Click to settle this debt" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='transparent'">
+            splitHtml += `<div class="split-balance-row" data-debtor="${escapeHTML(debtor)}" data-creditor="${escapeHTML(creditor)}" data-amount="${settledAmt}" style="padding:8px 0;border-bottom:1px solid var(--divider);font-size:0.95rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background 0.2s;" title="Click to settle this debt">
                 <span><strong style="color:${getStringColor(debtor)};">${escapeHTML(debtor)}</strong> owes <strong style="color:${getStringColor(creditor)};">${escapeHTML(creditor)}</strong></span>
                 <span style="display:flex;align-items:center;gap:8px;">
                     <span style="color:var(--danger);font-weight:700;">${formatCurrency(settledAmt)}</span>

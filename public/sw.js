@@ -1,5 +1,5 @@
 // Change this version number whenever you deploy an update (e.g., to 'finlytics-cache-v2')
-const CACHE_NAME = 'finlytics-cache-v11';
+const CACHE_NAME = 'finlytics-cache-v12';
 
 // Add the core files you want to cache for instant offline loading
 const FILES_TO_CACHE = [
@@ -8,6 +8,7 @@ const FILES_TO_CACHE = [
   '/css/themes.css',
   '/css/main.css',
   '/css/components.css',
+  '/css/receipt.css',
   '/js/categories.js',
   '/js/dashboard.js',
   '/js/transactions.js',
@@ -16,25 +17,24 @@ const FILES_TO_CACHE = [
   '/js/receiptGenerator.js',
   '/js/settings.js',
   '/js/app.js',
-  '/js/storage.js',
   '/js/utils.js',
   '/js/firebase-sync.js',
   '/data/defaultData.js',
-  '/manifest.json',
-  '/images/icon-192.png',
-  '/images/icon-192.webp',
-  '/images/icon-512.png',
-  '/images/icon-512.webp',
-  '/images/splash-1290x2796.png',
-  '/images/splash-1170x2532.png',
-  '/images/splash-1125x2436.png'
+  '/manifest.json'
 ];
 
 // Install event: Cache the initial files
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(FILES_TO_CACHE);
+      // FIX: Use addAll with individual catch to prevent one failure from aborting all caching
+      return Promise.allSettled(
+        FILES_TO_CACHE.map(url =>
+          cache.add(url).catch(err => {
+            console.warn('SW: Failed to cache', url, err);
+          })
+        )
+      );
     })
   );
 });

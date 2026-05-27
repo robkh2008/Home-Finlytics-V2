@@ -162,6 +162,9 @@ function refreshBudgetOverview(txs = null) {
 }
 
 async function renderDashboardCharts(transactions = null) {
+    // Guard: Skip if chart canvases aren't in the DOM (screen not visible)
+    if (!document.getElementById('dashPieChart') && !document.getElementById('dashTrendChart')) return;
+    
     const isLoaded = await loadChartJs();
     if (!isLoaded || typeof Chart === 'undefined') {
         console.warn('Chart.js failed to load – dashboard charts disabled.');

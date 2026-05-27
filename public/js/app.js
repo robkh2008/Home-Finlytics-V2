@@ -36,9 +36,9 @@ function pulseSyncDot() {
 
 function resetState() {
     state.transactions = [];
-    state.houses = [...(typeof DEFAULT_HOUSES !== 'undefined' ? DEFAULT_HOUSES : [])];
+    state.houses = [];
     state.categories = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : { expense: [], groceries: [] };
-    state.payers = [...(typeof DEFAULT_PAYERS !== 'undefined' ? DEFAULT_PAYERS : [])];
+    state.payers = [];
     state.budgets = {};
     state.electricRate = 8;
     state.recurringTemplates = [];
@@ -49,27 +49,34 @@ function resetState() {
 }
 
 // Firebase Sync override (Replacing storage.js local storage logic)
+let _saveStateTimer = null;
 function saveState() {
     state.lastUpdated = Date.now();
     state.hasUnsyncedChanges = true;
     if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
     
-    // Backup to local storage in case Firebase fails or app is offline
+    // FIX: Debounce saves to prevent excessive writes and UI lag
+    // Save to localStorage immediately for data safety
     try {
         localStorage.setItem('home_finlytics_state', JSON.stringify(state));
     } catch (e) { console.warn('Local storage disabled'); }
 
-    if (typeof window.saveStateToFirebase === 'function' && navigator.onLine) {
-        const syncPromise = window.saveStateToFirebase(state);
-        if (syncPromise && syncPromise.then) {
-            syncPromise.then(() => {
-                state.hasUnsyncedChanges = false;
-                if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
-                try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
-                if (typeof pulseSyncDot === 'function') pulseSyncDot();
-            }).catch(() => { /* Remains unsynced */ });
+    // Debounce Firebase writes to avoid rate limiting
+    if (_saveStateTimer) clearTimeout(_saveStateTimer);
+    _saveStateTimer = setTimeout(() => {
+        _saveStateTimer = null;
+        if (typeof window.saveStateToFirebase === 'function' && navigator.onLine) {
+            const syncPromise = window.saveStateToFirebase(state);
+            if (syncPromise && syncPromise.then) {
+                syncPromise.then(() => {
+                    state.hasUnsyncedChanges = false;
+                    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+                    try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+                    if (typeof pulseSyncDot === 'function') pulseSyncDot();
+                }).catch(() => { /* Remains unsynced */ });
+            }
         }
-    }
+    }, 500); // 500ms debounce for Firebase writes
 }
 
 function loadState() {
@@ -100,8 +107,8 @@ function loadState() {
         
         if (!state.categories.expense || state.categories.expense.length === 0) state.categories.expense = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.expense)) : [];
         if (!state.categories.groceries || state.categories.groceries.length === 0) state.categories.groceries = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.groceries)) : [];
-        if (!state.houses || state.houses.length === 0) state.houses = [...(typeof DEFAULT_HOUSES !== 'undefined' ? DEFAULT_HOUSES : [])];
-        if (!state.payers || state.payers.length === 0) state.payers = [...(typeof DEFAULT_PAYERS !== 'undefined' ? DEFAULT_PAYERS : [])];
+        if (!state.houses) state.houses = [];
+        if (!state.payers) state.payers = [];
         
         if (!state.budgets) state.budgets = {};
         if (!state.recurringTemplates) state.recurringTemplates = [];
@@ -111,6 +118,12 @@ function loadState() {
 function onFirebaseDataReceived(firebaseData) {
     const localUpdated = state.lastUpdated || 0;
     const cloudUpdated = firebaseData.lastUpdated || 0;
+
+    // Skip if this is our own write echoing back (prevents redundant refreshAll)
+    if (window._lastWrittenTimestamp && cloudUpdated === window._lastWrittenTimestamp) {
+        window._lastWrittenTimestamp = null;
+        return;
+    }
 
     // If local data is newer, it means we made changes offline that will be
     // pushed up shortly by `saveState()`, so we ignore the cloud data.
@@ -157,8 +170,8 @@ function onFirebaseDataReceived(firebaseData) {
 
     if (!state.categories.expense || state.categories.expense.length === 0) state.categories.expense = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.expense)) : [];
     if (!state.categories.groceries || state.categories.groceries.length === 0) state.categories.groceries = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.groceries)) : [];
-    if (!state.houses || state.houses.length === 0) state.houses = [...(typeof DEFAULT_HOUSES !== 'undefined' ? DEFAULT_HOUSES : [])];
-    if (!state.payers || state.payers.length === 0) state.payers = [...(typeof DEFAULT_PAYERS !== 'undefined' ? DEFAULT_PAYERS : [])];
+    if (!state.houses) state.houses = [];
+    if (!state.payers) state.payers = [];
     
     if (!state.budgets) state.budgets = {};
     if (!state.recurringTemplates) state.recurringTemplates = [];
@@ -298,13 +311,21 @@ function navigateTo(screenId) {
     }
 }
 
+// FIX: Use requestAnimationFrame to batch refreshAll calls and reduce layout thrashing
+let _refreshAllPending = false;
 function refreshAll() {
-    if(state.activeScreen==='screenDashboard') refreshDashboard();
-    if(state.activeScreen==='screenTransactions') refreshTransactionList();
-    if(state.activeScreen==='screenAnalytics') refreshAnalytics();
-    if(state.activeScreen==='screenSettings') refreshSettings();
-    if(state.activeScreen==='screenAdd') refreshAddForm();
-    if(state.activeScreen==='screenReceipt') refreshReceiptForm();
+    if (_refreshAllPending) return;
+    _refreshAllPending = true;
+    requestAnimationFrame(() => {
+        _refreshAllPending = false;
+        const scr = state.activeScreen;
+        if(scr==='screenDashboard') refreshDashboard();
+        else if(scr==='screenTransactions') refreshTransactionList();
+        else if(scr==='screenAnalytics') refreshAnalytics();
+        else if(scr==='screenSettings') refreshSettings();
+        else if(scr==='screenAdd') refreshAddForm();
+        else if(scr==='screenReceipt') refreshReceiptForm();
+    });
 }
 
 function refreshAllCharts() {
@@ -380,7 +401,6 @@ function bindTransactionEvents() {
             payer: state.currentUser ? state.currentUser.name : 'Unknown',
             paymentMethod: document.getElementById('addPaymentMethod')?.value || 'cash',
             splitWith: splitWith.length > 0 ? splitWith : null,
-            houseId: '', // Handled directly in receipt generator now
         };
             if (editTemplateIndex !== undefined && editTemplateIndex !== '') {
             const idx = parseInt(editTemplateIndex);
@@ -475,27 +495,21 @@ function bindTransactionEvents() {
             if (row) row.style.display = 'none';
         }
     });
-    document.getElementById('addCustomSubcatBtn')?.addEventListener('click', addCustomSubcategoryToCurrentCategory);
-    document.getElementById('addCustomSubcatInput')?.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addCustomSubcategoryToCurrentCategory();
-        }
-    });
 
     ['filterSearch', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', refreshTransactionList);
     });
-    ['filterType', 'filterCategory', 'filterSubcategory', 'filterPayer', 'filterDateFrom', 'filterDateTo', 'sortBy'].forEach(id => {
+    ['filterCategory', 'filterSubcategory', 'filterPayer', 'filterDateFrom', 'filterDateTo', 'sortBy'].forEach(id => {
         document.getElementById(id)?.addEventListener('change', refreshTransactionList);
+    });
+    // filterType needs populateFilterCategories before refreshTransactionList
+    document.getElementById('filterType')?.addEventListener('change', () => {
+        populateFilterCategories();
+        refreshTransactionList();
     });
     document.getElementById('sortToggleBtn')?.addEventListener('click', function() {
         state.sortAscending = !state.sortAscending;
         this.querySelector('i').className = state.sortAscending ? 'fas fa-arrow-down' : 'fas fa-arrow-up';
-        refreshTransactionList();
-    });
-    document.getElementById('filterType')?.addEventListener('change', () => {
-        populateFilterCategories();
         refreshTransactionList();
     });
     
@@ -555,9 +569,14 @@ function bindSettingsEvents() {
         const type = this.value;
         refreshSettingsCatList(type);
         populateSettingsCategorySelect(type);
+        // FIX: Reset subcategory list since category selection may no longer be valid
+        const subcatContainer = document.getElementById('subcatList');
+        if (subcatContainer) subcatContainer.innerHTML = '<p style="color:var(--text-tertiary);">Select a category to manage subcategories.</p>';
+    });
+    document.getElementById('settingsCategorySelect')?.addEventListener('change', function() {
+        const type = document.getElementById('settingsCatType')?.value || 'expense';
         refreshSubcategoryList(type);
     });
-    document.getElementById('settingsCategorySelect')?.addEventListener('change', refreshSubcategoryList);
 
     document.getElementById('addSubcatBtn')?.addEventListener('click', () => {
         if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
@@ -565,14 +584,25 @@ function bindSettingsEvents() {
         const catName = document.getElementById('settingsCategorySelect').value;
         const subName = document.getElementById('newSubcatName').value.trim();
         if (!catName || !subName) return showToast('Select category and enter subcategory name', 'exclamation-triangle');
-        const cats = state.categories?.[type] || [];
-        const cat = cats.find(c => c.name === catName);
-        if (!cat) return;
-        if (!cat.subcategories) cat.subcategories = [];
-        if (cat.subcategories.some(s => s.toLowerCase() === subName.toLowerCase())) return showToast('Subcategory already exists', 'exclamation-triangle');
-        cat.subcategories.push(subName);
+        
+        // Find and update the category in ALL type collections (sync Groceries across expense + groceries)
+        let found = false;
+        ['expense', 'groceries'].forEach(t => {
+            if (!state.categories?.[t]) return;
+            const cats = Object.values(state.categories[t]).filter(Boolean);
+            const cat = cats.find(c => c.name === catName);
+            if (cat) {
+                if (!cat.subcategories) cat.subcategories = [];
+                if (!cat.subcategories.some(s => s.toLowerCase() === subName.toLowerCase())) {
+                    cat.subcategories.push(subName);
+                    found = true;
+                }
+            }
+        });
+        if (!found) return showToast('Category not found', 'exclamation-triangle');
+        
         saveState();
-        refreshSubcategoryList();
+        refreshSubcategoryList(type);
         document.getElementById('newSubcatName').value = '';
         showToast('Subcategory added!', 'check-circle');
     });
@@ -584,11 +614,18 @@ function bindSettingsEvents() {
         const catName = btn.dataset.cat;
         const sub = btn.dataset.sub;
         const type = document.getElementById('settingsCatType').value;
-        const cats = state.categories?.[type] || [];
-        const cat = cats.find(c => c.name === catName);
-        if (cat) cat.subcategories = cat.subcategories.filter(s => s !== sub);
+        
+        // Remove from ALL type collections to keep copies in sync
+        ['expense', 'groceries'].forEach(t => {
+            if (!state.categories?.[t]) return;
+            const cats = Object.values(state.categories[t]).filter(Boolean);
+            const cat = cats.find(c => c.name === catName);
+            if (cat && cat.subcategories) {
+                cat.subcategories = cat.subcategories.filter(s => s !== sub);
+            }
+        });
         saveState();
-        refreshSubcategoryList();
+        refreshSubcategoryList(type);
         showToast('Subcategory removed.', 'trash-alt');
     });
 
@@ -676,7 +713,8 @@ function bindSettingsEvents() {
         document.getElementById('newCatName').value = '';
         if (document.getElementById('newCatIcon')) document.getElementById('newCatIcon').value = '';
         if (document.getElementById('newCatColor')) document.getElementById('newCatColor').value = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
-        refreshSettingsCatList();
+        refreshSettingsCatList(type);
+        populateSettingsCategorySelect(type); // Refresh the "Select Category to Manage" dropdown
         refreshAll();
         showToast('Category added!', 'check-circle');
     });
@@ -742,6 +780,9 @@ function bindSettingsEvents() {
         if (!cat || isNaN(limit) || limit <= 0) { showToast('Enter valid limit', 'exclamation-triangle'); return; }
         state.budgets[cat] = limit;
         saveState();
+        // Reset the input field and refresh the category dropdown
+        document.getElementById('budgetLimitInput').value = '';
+        document.getElementById('budgetCatSelect').value = '';
         refreshSettings();
         showToast('Budget set for ' + cat, 'bullseye');
     });
@@ -759,6 +800,14 @@ function bindSettingsEvents() {
     // Houses
     document.getElementById('addHouseBtn')?.addEventListener('click', function() {
         if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        
+        // Check if we're editing an existing house
+        const editingId = this.dataset.editingHouseId;
+        if (editingId) {
+            if (typeof updateHouse === 'function') updateHouse(editingId);
+            return;
+        }
+        
         const h = {
             id: 'h' + Date.now(),
             houseNo: document.getElementById('newHouseNo').value.trim(),
@@ -776,6 +825,15 @@ function bindSettingsEvents() {
         showToast('House added!', 'home');
     });
     document.getElementById('settingsHouseList')?.addEventListener('click', function(e) {
+        // Edit house
+        const editBtn = e.target.closest('.edit-house-btn');
+        if (editBtn) {
+            if (state.userRole !== 'admin') return;
+            const houseId = editBtn.dataset.id;
+            editHouseUI(houseId);
+            return;
+        }
+        // Remove house
         const btn = e.target.closest('.remove-house-btn');
         if (state.userRole !== 'admin') return;
         if (btn) {
@@ -1000,6 +1058,17 @@ function bindAnalyticsEvents() {
         });
     });
 
+    // Export Analytics as PDF (triggers browser print with analytics-only styles)
+    document.getElementById('exportAnalyticsPDFBtn')?.addEventListener('click', () => {
+        document.body.classList.add('printing-analytics');
+        setTimeout(() => {
+            window.print();
+        }, 300);
+    });
+    window.addEventListener('afterprint', () => {
+        document.body.classList.remove('printing-analytics');
+    });
+
     document.getElementById('analyticsSplitBalances')?.addEventListener('click', async (e) => {
         const btn = e.target.closest('.share-balance-btn');
         if (btn) {
@@ -1043,8 +1112,13 @@ function updateReceiptTotal() {
     const adj2 = parseFloat(document.getElementById('adj2Amount')?.value) || 0;
     total += (document.getElementById('adj1Type')?.value === 'add' ? adj1 : -adj1);
     total += (document.getElementById('adj2Type')?.value === 'add' ? adj2 : -adj2);
-    const formTotal = document.querySelector('#receiptForm .receipt-total-form');
-    if (formTotal) formTotal.innerHTML = `<strong>Total: ${formatCurrency(Math.max(0,total))}</strong>`;
+    
+    // FIX: Update both the in-form and the standalone total preview
+    const formattedTotal = formatCurrency(Math.max(0, total));
+    const inFormTotal = document.getElementById('receiptTotalPreview');
+    if (inFormTotal) inFormTotal.innerHTML = `<strong>Total: ${formattedTotal}</strong>`;
+    const standaloneTotal = document.getElementById('receiptTotalPreviewForm');
+    if (standaloneTotal) standaloneTotal.innerHTML = `<strong>Total: ${formattedTotal}</strong>`;
 }
 window.updateReceiptTotal = updateReceiptTotal;
 
@@ -1155,7 +1229,11 @@ function setupPullToRefresh() {
 
 // ==================== BIOMETRIC UNLOCK ====================
 async function triggerUnlock() {
-    if (!state.appLock?.credentialId) return continueInit();
+    if (!state.appLock?.credentialId) {
+        // No lock configured — bypass the guard and init directly
+        window._appInitialized = false;
+        return continueInit();
+    }
     try {
         const challenge = new Uint8Array(32);
         crypto.getRandomValues(challenge);
@@ -1175,8 +1253,9 @@ async function triggerUnlock() {
         
         await navigator.credentials.get({ publicKey: pubKey });
         
-        // Authentication Success
+        // Authentication Success — bypass guard since lock path set the flag
         document.getElementById('lockScreen').style.display = 'none';
+        window._appInitialized = false;
         continueInit();
     } catch (err) {
         console.error(err);
@@ -1187,8 +1266,11 @@ async function triggerUnlock() {
 // ==================== INIT ====================
 window.handleAuthStateChanged = async (user) => {
     const wasUser = !!state.currentUser;
+    const previousUid = state.currentUser?.uid;
+    
     if (user) {
         const name = user.displayName || user.email.split('@')[0];
+        const isNewUser = previousUid !== user.uid; // True on first login or account switch
         state.currentUser = { uid: user.uid, name: name, email: user.email };
         
         // Fetch role from Firebase dynamically
@@ -1198,20 +1280,10 @@ window.handleAuthStateChanged = async (user) => {
             state.userRole = 'user';
         }
         
-        const syncUserLabel = document.getElementById('syncUserName');
-        if (syncUserLabel) {
-            syncUserLabel.textContent = name;
-        } else {
-            const btn = document.getElementById('headerSyncBtn');
-            if (btn) {
-                const span = document.createElement('span');
-                span.id = 'syncUserName';
-                span.style.fontSize = '0.85rem';
-                span.style.marginRight = '8px';
-                span.style.fontWeight = '600';
-                span.textContent = name;
-                btn.insertBefore(span, btn.firstChild);
-            }
+        const headerUserName = document.getElementById('headerUserName');
+        if (headerUserName) {
+            headerUserName.textContent = name;
+            headerUserName.style.display = 'inline';
         }
         
         const signOutWrap = document.getElementById('settingsSignOutWrap');
@@ -1222,7 +1294,8 @@ window.handleAuthStateChanged = async (user) => {
         const signInWrap = document.getElementById('settingsSignInWrap');
         if (signInWrap) signInWrap.style.display = 'none';
 
-        if (typeof window.listenToFirebaseState === 'function') {
+        // Only re-attach Firebase listeners if the user actually changed (not on token refresh)
+        if (isNewUser && typeof window.listenToFirebaseState === 'function') {
             window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
         }
         applyRoleRestrictions();
@@ -1230,13 +1303,16 @@ window.handleAuthStateChanged = async (user) => {
         const loginModal = document.getElementById('firebaseLoginModal');
         if (loginModal) loginModal.remove();
 
-        if (!window.appInitialized) {
-            window.appInitialized = true;
+        if (!window._appInitialized) {
             if (state.appLock && state.appLock.enabled) {
+                // Lock path: hide splash, show lock screen.
+                // Mark initialized to prevent re-entry during unlock.
+                window._appInitialized = true;
                 document.getElementById('splashScreen').style.display = 'none';
                 document.getElementById('lockScreen').style.display = 'flex';
                 triggerUnlock();
             } else {
+                // Normal path: continueInit() will set _appInitialized
                 continueInit();
             }
         } else if (!wasUser) {
@@ -1246,8 +1322,11 @@ window.handleAuthStateChanged = async (user) => {
         state.currentUser = null;
         state.userRole = 'user';
         
-        const syncUserLabel = document.getElementById('syncUserName');
-        if (syncUserLabel) syncUserLabel.textContent = '';
+        const headerUserName = document.getElementById('headerUserName');
+        if (headerUserName) {
+            headerUserName.textContent = '';
+            headerUserName.style.display = 'none';
+        }
 
         const signOutWrap = document.getElementById('settingsSignOutWrap');
         if (signOutWrap) signOutWrap.style.display = 'none';
@@ -1263,8 +1342,7 @@ window.handleAuthStateChanged = async (user) => {
         }
         applyRoleRestrictions();
         
-        if (!window.appInitialized) {
-            window.appInitialized = true;
+        if (!window._appInitialized) {
             continueInit();
         }
 
@@ -1296,29 +1374,43 @@ function init() {
         });
     }
 
-    if (!state.payers) state.payers = [...DEFAULT_PAYERS];
+    if (!state.payers) state.payers = [];
     applyTheme();
     bindEvents();
     setupPullToRefresh();
 
-    // Fallback if firebase fails to load
-    setTimeout(() => {
-        if (!window.appInitialized && typeof window.showLoginUI !== 'function') {
+    // FIX: Prevent duplicate continueInit() calls from timeout + auth callback race
+    window._initFallbackTimer = setTimeout(() => {
+        if (!window._appInitialized) {
             console.warn("Firebase Auth timeout, proceeding offline");
-            window.appInitialized = true;
             continueInit();
         }
-    }, 3000);
+    }, 4000);
 }
 
 function continueInit() {
+    // FIX: Guard against multiple calls
+    if (window._appInitialized) return;
+    window._appInitialized = true;
+    
+    // Clear the fallback timer if it hasn't fired yet
+    if (window._initFallbackTimer) {
+        clearTimeout(window._initFallbackTimer);
+        window._initFallbackTimer = null;
+    }
+    
     navigateTo('screenDashboard');
     document.getElementById('splashScreen')?.classList.add('hide');
     document.getElementById('appShell').style.display = 'flex';
+    
+    // FIX: Use transitionend or a single timeout to fully remove splash
     setTimeout(() => {
         const splash = document.getElementById('splashScreen');
-        if (splash) splash.style.display = 'none';
-    }, 400);
+        if (splash) {
+            splash.style.display = 'none';
+            splash.classList.remove('hide');
+        }
+    }, 500);
 
     const addDateEl = document.getElementById('addDate');
     if (addDateEl) addDateEl.value = new Date().toISOString().slice(0,10);

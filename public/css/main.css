@@ -9,7 +9,10 @@
 }
 input,
 select,
-textarea {
+textarea,
+.receipt-paper,
+.receipt-paper *,
+[data-selectable] {
     -webkit-user-select: text;
     user-select: text;
 }

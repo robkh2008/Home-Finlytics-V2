@@ -49,10 +49,25 @@
     body.printing-receipt * { visibility: hidden !important; }
     body.printing-receipt #receiptPaper,
     body.printing-receipt #receiptPaper * { visibility: visible !important; }
+    /* FIX: Make parent containers visible so receipt paper can actually render */
+    body.printing-receipt #receiptPreviewCard,
+    body.printing-receipt #screenReceipt,
+    body.printing-receipt #screenReceipt .screen-scroll,
+    body.printing-receipt #screenReceipt .screen-scroll > *,
+    body.printing-receipt .app-content,
+    body.printing-receipt #appShell,
+    body.printing-receipt body,
+    body.printing-receipt html { visibility: visible !important; }
     body.printing-receipt #receiptPaper {
         position: absolute; left: 0; top: 0; width: 100%;
         margin: 0; padding: 20px; box-sizing: border-box;
         background: #ffffff !important; color: #000000 !important;
+        box-shadow: none !important; border: none !important;
+    }
+    body.printing-receipt #receiptPreviewCard {
+        position: absolute; left: 0; top: 0; width: 100%; height: auto;
+        border: none !important; margin: 0 !important; padding: 0 !important;
+        background: transparent !important; box-shadow: none !important;
     }
     body.printing-receipt .app-header,
     body.printing-receipt .bottom-tab-bar,
@@ -63,9 +78,14 @@
     body.printing-receipt #receiptActionsRow,
     body.printing-receipt .card-title,
     body.printing-receipt .receipt-total-preview,
-    body.printing-receipt #printReceiptBtn { display: none !important; }
-    body.printing-receipt #receiptPreviewCard {
-        border: none !important; margin: 0 !important; padding: 0 !important;
-        background: transparent !important; box-shadow: none !important;
+    body.printing-receipt #printReceiptBtn,
+    body.printing-receipt #receiptTotalPreviewForm,
+    body.printing-receipt #receiptTotalPreviewDisplay { display: none !important; }
+    body.printing-receipt #screenReceipt {
+        position: static !important; overflow: visible !important;
+        padding: 0 !important; margin: 0 !important;
+    }
+    body.printing-receipt .screen-scroll {
+        overflow: visible !important; gap: 0 !important;
     }
 }

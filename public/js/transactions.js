@@ -105,7 +105,9 @@ function getFilteredTransactions() {
     if (fCat !== 'all') txs = txs.filter(t => (t.category || '').toLowerCase() === fCat.toLowerCase());
     if (fSub !== 'all') txs = txs.filter(t => (t.subcategory || '').toLowerCase() === fSub.toLowerCase());
     if (fPayer !== 'all') txs = txs.filter(t => (t.payer || '').toLowerCase() === fPayer.toLowerCase());
-    if (fSearch) txs = txs.filter(t => (t.category + ' ' + t.subcategory + ' ' + t.notes + ' ' + t.payer + ' ' + t.paymentMethod).toLowerCase().includes(fSearch));
+    if (fSearch) txs = txs.filter(t => 
+        ((t.category || '') + ' ' + (t.subcategory || '') + ' ' + (t.notes || '') + ' ' + (t.payer || '') + ' ' + (t.paymentMethod || '')).toLowerCase().includes(fSearch)
+    );
     if (fDateFrom) txs = txs.filter(t => t.date >= fDateFrom);
     if (fDateTo) txs = txs.filter(t => t.date <= fDateTo);
     if (!isNaN(fAmtMin)) txs = txs.filter(t => parseFloat(t.amount) >= fAmtMin);

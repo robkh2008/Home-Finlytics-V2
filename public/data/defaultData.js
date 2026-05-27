@@ -1,8 +1,7 @@
 // ==================== data/defaultData.js ====================
-const DEFAULT_HOUSES = [
-    { id: 'h1', houseNo: '37', address: 'Safdarjung Enclave', tenant: 'Robert', owner: 'Mr. Anil', rent: 8800, },
-    { id: 'h2', houseNo: '85', address: 'Humayumpur', tenant: 'Esther', owner: 'Mr. Sandy', rent: 16000 },     
-];
+// Default houses — empty by design. Users add their own houses via Settings.
+// Houses are synced from the admin's account to all household members via Firebase.
+const DEFAULT_HOUSES = [];
 
 const DEFAULT_CATEGORIES = {
     expense: [{ name: 'Food', icon:"🍜", color: '#ff6b6b', subcategories: ['Dining Out', 'Snacks', 'Delivery & Takeout', 'Cafes & Coffee', 'Work Lunch', 'Fast Food'] },
@@ -22,5 +21,6 @@ const DEFAULT_CATEGORIES = {
         { name: 'Groceries', icon:"🛒", color: '#8bc34a', subcategories: ['Vegetables', 'Fruits', 'Fish', 'Drinking Water', 'Meat', 'Dairy & Eggs', 'Grains', 'Snacks', 'Beverages', 'Pantry & Spices', 'Household'] }
     ]
 }
-// Default payers (now stored in state.payers)
-const DEFAULT_PAYERS = ['Robert', 'Esther', 'Gedion', 'Angela'];
+// Default payers — empty by design. Users add their own payers via Settings.
+// Payer names are linked to the logged-in user's household and synced via Firebase.
+const DEFAULT_PAYERS = [];

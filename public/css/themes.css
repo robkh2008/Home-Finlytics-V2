@@ -69,6 +69,49 @@
     --backdrop-blur: saturate(180%) blur(22px);
 }
 
+/* Accessibility: Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Dark theme detection before JS loads (progressive enhancement) */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        --bg-primary: #0d0d0f;
+        --bg-secondary: #1c1c1e;
+        --bg-tertiary: #262628;
+        --text-primary: #f5f5f7;
+        --text-secondary: #aeaeb2;
+        --text-tertiary: #636366;
+        --accent: #0a84ff;
+        --danger: #ff453a;
+        --warning: #ff9f0a;
+        --success: #30d158;
+        --glass-bg: rgba(30, 30, 32, 0.74);
+        --glass-border: rgba(255, 255, 255, 0.12);
+        --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        --card-bg: rgba(38, 38, 40, 0.76);
+        --tab-bar-bg: rgba(20, 20, 22, 0.88);
+        --tab-active: #0a84ff;
+        --tab-inactive: #636366;
+        --switch-bg: #3a3a3c;
+        --switch-active: #30d158;
+        --divider: rgba(255, 255, 255, 0.1);
+        --skeleton: #3a3a3c;
+        --chart-grid: rgba(255, 255, 255, 0.08);
+        --badge-bg: #2c2c2e;
+        --hover-row: rgba(255, 255, 255, 0.04);
+        --backdrop-blur: saturate(180%) blur(22px);
+    }
+}
+
 @media print {
     .receipt-paper {
         background: #fff !important;
