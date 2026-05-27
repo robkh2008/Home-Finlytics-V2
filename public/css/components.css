@@ -63,23 +63,26 @@
     border: 2px solid var(--bg-secondary);
     transition: background var(--transition-fast);
 }
-.sync-dot.connected {
-    background: var(--success);
+/* Pull to Refresh */
+.ptr-indicator {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    right: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    font-size: 1.5rem;
+    z-index: 10;
 }
-.sync-dot.syncing {
-    background: var(--warning);
-    animation: pulse-dot 0.8s infinite;
+.ptr-indicator.refreshing i {
+    animation: spin-ptr 1s linear infinite;
+    color: var(--accent);
 }
-@keyframes pulse-dot {
-    0%,
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(1.6);
-        opacity: 0.5;
-    }
+@keyframes spin-ptr {
+    100% { transform: rotate(360deg); }
 }
 /* Main Content */
 .app-content {
@@ -96,6 +99,7 @@
     padding: 16px;
     padding-bottom: calc(80px + var(--safe-bottom));
     animation: fadeSlideIn 0.25s ease-out;
+    overscroll-behavior-y: contain;
 }
 .screen.active {
     display: block;
@@ -502,9 +506,6 @@
 }
 
 /* Budget Progress */
-.budget-progress-wrap {
-    margin-top: 6px;
-}
 .budget-progress-bar {
     height: 6px;
     border-radius: 6px;
@@ -525,29 +526,6 @@
 }
 .budget-progress-fill.danger {
     background: var(--danger);
-}
-
-/* Badge */
-.badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 20px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    background: var(--badge-bg);
-    color: var(--text-secondary);
-}
-.badge.success {
-    background: rgba(52, 199, 89, 0.18);
-    color: var(--success);
-}
-.badge.danger {
-    background: rgba(255, 59, 48, 0.18);
-    color: var(--danger);
-}
-.badge.warning {
-    background: rgba(255, 149, 0, 0.18);
-    color: var(--warning);
 }
 
 /* Swipe action */
@@ -632,84 +610,6 @@
     body {
         background: #ffffff;
         color: #000 !important;
-    }
-
-    /* --- Receipt Specific Print --- */
-    body.printing-receipt * {
-        visibility: hidden;
-    }
-    body.printing-receipt #receiptPaper,
-    body.printing-receipt #receiptPaper * {
-        visibility: visible;
-    }
-    body.printing-receipt #receiptPaper {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        margin: 0;
-        padding: 20px; /* Add some padding for the print margin */
-        box-sizing: border-box;
-    }
-
-    body.printing-receipt .app-content,
-    body.printing-receipt .screen,
-    body.printing-receipt .screen-scroll,
-    body.printing-receipt #appShell,
-    body.printing-receipt body,
-    body.printing-receipt html {
-        overflow: visible !important;
-        position: static !important;
-        height: auto !important;
-    }
-
-    .app-header,
-    .bottom-tab-bar,
-    .btn,
-    .modal-overlay,
-    .toast-container,
-    .bulk-bar,
-    .tx-swipe-actions,
-    #receiptForm,
-    #receiptActionsRow {
-        display: none !important;
-    }
-    .screen {
-        position: static !important;
-        overflow: visible !important;
-        padding: 0 !important;
-    }
-    .glass-card {
-        box-shadow: none !important;
-        border: 1px solid #ccc !important;
-        background: #fff !important;
-    }
-    #receiptPreviewCard {
-        border: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-    #receiptPreviewCard .card-title {
-        display: none !important;
-    }
-    .receipt-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 15px;
-    }
-    .receipt-header img {
-        width: 60px;
-        height: 60px;
-    }
-    .receipt-timestamp {
-        font-size: 0.8rem;
-        color: #555;
-    }
-    .receipt-barcode {
-        font-family: monospace;
-        letter-spacing: 3px;
-        transform: scaleX(0.5);
     }
 }
 

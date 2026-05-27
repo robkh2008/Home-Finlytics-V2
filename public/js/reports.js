@@ -1,10 +1,16 @@
-// ==================== js/analytics.js ====================
+// ==================== js/reports.js ====================
 let analyticsBalanceChart, analyticsTopCatChart, analyticsMonthlyChart, analyticsSpenderChart, analyticsSubcatGroupChart;
+let analyticsMonthlyBreakdownPeriod = 6;
+let analyticsExpenseTrendPeriod = 6;
 
 function refreshAnalytics() {
     // Safety check
     if (typeof Chart === 'undefined') {
         console.warn('Chart.js not loaded – analytics disabled.');
+        return;
+    }
+    if (typeof getVisibleTransactions !== 'function' || typeof formatCurrency !== 'function') {
+        console.warn('Core utility functions not loaded – analytics disabled.');
         return;
     }
 
@@ -23,7 +29,7 @@ function refreshAnalytics() {
 
     const expTxs = filtered.filter(t => ['expense', 'groceries'].includes(t.type));
     const expense = expTxs.reduce((s, t) => s + parseFloat(t.amount), 0);
-    const groceriesTotal = expTxs.filter(t => t.type === 'groceries' || t.category === 'Groceries').reduce((s, t) => s + parseFloat(t.amount), 0);
+    const groceriesTotal = expTxs.filter(t => t.type === 'groceries').reduce((s, t) => s + parseFloat(t.amount), 0);
     const rentTotal = expTxs.filter(t => t.category === 'House Rent').reduce((s, t) => s + parseFloat(t.amount), 0);
     const txCount = expTxs.length;
 
@@ -42,16 +48,22 @@ function refreshAnalytics() {
         </div>
     `;
     renderAnalyticsCharts(filtered);
+    setupAnalyticsMonthlyPeriodSelector();
+    setupAnalyticsTrendPeriodSelector();
 }
 
 function renderAnalyticsCharts(filteredTxs) {
     const filtered = filteredTxs || getVisibleTransactions();
+    const allTxs = getVisibleTransactions(); // Cached unfiltered list for bypass charts
     const style = getComputedStyle(document.documentElement);
     const textPrimary = style.getPropertyValue('--text-primary').trim() || '#000';
     const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#666';
     const textTertiary = style.getPropertyValue('--text-tertiary').trim() || '#999';
     const chartGrid = style.getPropertyValue('--chart-grid').trim() || 'rgba(0,0,0,0.06)';
     const accentColor = style.getPropertyValue('--accent').trim() || '#007aff';
+    const dangerColor = style.getPropertyValue('--danger').trim() || '#ff3b30';
+    const successColor = style.getPropertyValue('--success').trim() || '#34c759';
+    const warningColor = style.getPropertyValue('--warning').trim() || '#ff9500';
 
     // 1. Expense Trend
     const ctx1 = document.getElementById('analyticsBalanceTrend')?.getContext('2d');
@@ -60,27 +72,37 @@ function renderAnalyticsCharts(filteredTxs) {
         if (title && title.innerText.includes('Balance')) title.innerHTML = '<i class="fas fa-chart-line"></i> Expense Trend';
         
         if (analyticsBalanceChart) analyticsBalanceChart.destroy();
-        const months = [...new Set(filtered.map(t => t.date.slice(0, 7)))].sort();
-        const expData = [];
-        months.forEach(m => {
-            const exp = filtered.filter(t => t.date.startsWith(m) && ['expense', 'groceries'].includes(t.type)).reduce((s, t) => s + parseFloat(t.amount), 0);
-            expData.push(exp);
+        
+        const now = new Date();
+        const months = [];
+        for (let i = analyticsExpenseTrendPeriod - 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        }
+        const expData = months.map(m => {
+            return allTxs
+                .filter(t => t.date.startsWith(m) && ['expense', 'groceries'].includes(t.type))
+                .reduce((s, t) => s + parseFloat(t.amount), 0);
         });
         analyticsBalanceChart = new Chart(ctx1, {
             type: 'line',
             data: {
-                labels: months,
+                labels: months.map(m => {
+                    const [y, mo] = m.split('-');
+                    return `${['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(mo)]} ${y.slice(2)}`;
+                }),
                 datasets: [{
                     label: 'Expenses',
                     data: expData,
-                    borderColor: '#ff3b30',
+                    borderColor: dangerColor,
                     tension: 0.4,
                     fill: true,
-                    backgroundColor: hexToRgba('#ff3b30', 0.1),
+                    backgroundColor: hexToRgba(dangerColor, 0.1),
                     pointRadius: 3
                 }]
             },
             options: {
+                animation: { duration: 300 },
                 responsive: true,
                 plugins: { legend: { display: false } },
                 scales: {
@@ -122,6 +144,7 @@ function renderAnalyticsCharts(filteredTxs) {
                 }]
             },
             options: {
+                animation: { duration: 300 },
                 responsive: true,
                 plugins: { legend: { display: false } },
                 scales: {
@@ -147,41 +170,58 @@ function renderAnalyticsCharts(filteredTxs) {
     if (ctx3) {
         if (analyticsMonthlyChart) analyticsMonthlyChart.destroy();
         const monMap = {};
-        filtered.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
-            const m = t.date.slice(0, 7);
-            if (!monMap[m]) monMap[m] = { groc: 0, rent: 0, other: 0 };
-            
-            if (t.type === 'groceries' || t.category === 'Groceries') monMap[m].groc += parseFloat(t.amount);
-            else if (t.category === 'House Rent') monMap[m].rent += parseFloat(t.amount);
-            else monMap[m].other += parseFloat(t.amount);
+        
+        const now = new Date();
+        const months = [];
+        for (let i = analyticsMonthlyBreakdownPeriod - 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        }
+        months.forEach(m => {
+            monMap[m] = { groc: 0, rent: 0, other: 0 };
         });
-        const mKeys = Object.keys(monMap).sort();
+
+        // Use global visible transactions to bypass top period filter
+        allTxs.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
+            const m = t.date.slice(0, 7);
+            if (monMap[m]) {
+                if (t.type === 'groceries' || t.category === 'Groceries') monMap[m].groc += parseFloat(t.amount);
+                else if (t.category === 'House Rent') monMap[m].rent += parseFloat(t.amount);
+                else monMap[m].other += parseFloat(t.amount);
+            }
+        });
+        
+        const mKeys = months;
         analyticsMonthlyChart = new Chart(ctx3, {
             type: 'bar',
             data: {
-                labels: mKeys,
+                labels: mKeys.map(m => {
+                    const [y, mo] = m.split('-');
+                    return `${['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(mo)]} ${y.slice(2)}`;
+                }),
                 datasets: [
                     {
                         label: 'Groceries',
                         data: mKeys.map(k => monMap[k].groc),
-                        backgroundColor: '#34c759',
+                        backgroundColor: successColor,
                         borderRadius: 4
                     },
                     {
                         label: 'Rent',
                         data: mKeys.map(k => monMap[k].rent),
-                        backgroundColor: '#ff9500',
+                        backgroundColor: warningColor,
                         borderRadius: 4
                     },
                     {
                         label: 'Other',
                         data: mKeys.map(k => monMap[k].other),
-                        backgroundColor: '#ff3b30',
+                        backgroundColor: dangerColor,
                         borderRadius: 4
                     }
                 ]
             },
             options: {
+                animation: { duration: 300 },
                 responsive: true,
                 plugins: {
                     legend: {
@@ -231,6 +271,7 @@ function renderAnalyticsCharts(filteredTxs) {
                 }]
             },
             options: {
+                animation: { duration: 300 },
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { 
@@ -281,6 +322,7 @@ function renderAnalyticsCharts(filteredTxs) {
                 }]
             },
             options: {
+                animation: { duration: 300 },
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { 
@@ -312,9 +354,11 @@ function renderAnalyticsCharts(filteredTxs) {
         const balances = {}; // Pair tracker
         filtered.forEach(t => {
             // Handle settlement payments
-            if (t.type === 'settlement' && t.payer && t.splitWith && t.splitWith.length === 1) {
-                const amount = parseFloat(t.amount);
-                const [p1, p2] = [t.payer, t.splitWith[0]].sort();
+            if (t.type === 'settlement' && t.payer && t.splitWith) {
+                const splitArr = Array.isArray(t.splitWith) ? t.splitWith : [t.splitWith];
+                if (splitArr.length !== 1) return;
+                const amount = parseFloat(t.amount) || 0;
+                const [p1, p2] = [t.payer, splitArr[0]].sort();
                 const pairKey = `${p1}|${p2}`;
                 if (!balances[pairKey]) balances[pairKey] = 0;
                 if (t.payer === p1) {
@@ -325,7 +369,7 @@ function renderAnalyticsCharts(filteredTxs) {
             }
             // Handle Lent / Returned to "Me"
             else if (t.type === 'lent' && t.payer) {
-                const amount = parseFloat(t.amount);
+                const amount = parseFloat(t.amount) || 0;
                 const [p1, p2] = ['Me', t.payer].sort();
                 const pairKey = `${p1}|${p2}`;
                 if (!balances[pairKey]) balances[pairKey] = 0;
@@ -333,7 +377,7 @@ function renderAnalyticsCharts(filteredTxs) {
                 else balances[pairKey] -= amount;
             }
             else if (t.type === 'returned' && t.payer) {
-                const amount = parseFloat(t.amount);
+                const amount = parseFloat(t.amount) || 0;
                 const [p1, p2] = ['Me', t.payer].sort();
                 const pairKey = `${p1}|${p2}`;
                 if (!balances[pairKey]) balances[pairKey] = 0;
@@ -341,10 +385,12 @@ function renderAnalyticsCharts(filteredTxs) {
                 else balances[pairKey] += amount;
             }
             // Handle regular split expenses
-            else if (t.payer && t.splitWith && t.splitWith.length > 0) {
-                const amount = parseFloat(t.amount);
-                const splitAmt = amount / (t.splitWith.length + 1); // Equal split
-                t.splitWith.forEach(debtor => {
+            else if (t.payer && t.splitWith) {
+                const splitArr = Array.isArray(t.splitWith) ? t.splitWith : [t.splitWith];
+                if (splitArr.length === 0) return;
+                const amount = parseFloat(t.amount) || 0;
+                const splitAmt = amount / (splitArr.length + 1); // Equal split
+                splitArr.forEach(debtor => {
                     const [p1, p2] = [t.payer, debtor].sort();
                     const pairKey = `${p1}|${p2}`;
                     if (!balances[pairKey]) balances[pairKey] = 0;
@@ -365,16 +411,104 @@ function renderAnalyticsCharts(filteredTxs) {
             const creditor = amt > 0 ? p1 : p2;
             const settledAmt = Math.abs(amt);
             
-            splitHtml += `<div class="split-balance-row" data-debtor="${debtor}" data-creditor="${creditor}" data-amount="${settledAmt}" style="padding:8px 0;border-bottom:1px solid var(--divider);font-size:0.95rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background 0.2s;" title="Click to settle this debt" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='transparent'">
-                <span><strong style="color:${getStringColor(debtor)};">${debtor}</strong> owes <strong style="color:${getStringColor(creditor)};">${creditor}</strong></span>
+            splitHtml += `<div class="split-balance-row" data-debtor="${escapeHTML(debtor)}" data-creditor="${escapeHTML(creditor)}" data-amount="${settledAmt}" style="padding:8px 0;border-bottom:1px solid var(--divider);font-size:0.95rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background 0.2s;" title="Click to settle this debt" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='transparent'">
+                <span><strong style="color:${getStringColor(debtor)};">${escapeHTML(debtor)}</strong> owes <strong style="color:${getStringColor(creditor)};">${escapeHTML(creditor)}</strong></span>
                 <span style="display:flex;align-items:center;gap:8px;">
                     <span style="color:var(--danger);font-weight:700;">${formatCurrency(settledAmt)}</span>
-                    <button class="btn btn-xs btn-secondary share-balance-btn" data-debtor="${debtor}" data-creditor="${creditor}" data-amount="${settledAmt}" style="padding:4px 6px; border-radius:4px; font-size:0.75rem;" title="Share"><i class="fas fa-share-alt"></i></button>
+                    <button class="btn btn-xs btn-secondary share-balance-btn" data-debtor="${escapeHTML(debtor)}" data-creditor="${escapeHTML(creditor)}" data-amount="${settledAmt}" style="padding:4px 6px; border-radius:4px; font-size:0.75rem;" title="Share"><i class="fas fa-share-alt"></i></button>
                     <i class="fas fa-chevron-right" style="font-size:0.8rem;color:var(--text-tertiary);"></i>
                 </span>
             </div>`;
         }
         if (!splitHtml) splitHtml = '<p style="color:var(--text-tertiary);text-align:center;font-size:0.85rem;margin:10px 0;">No pending splits for this period.</p>';
         splitContainer.innerHTML = splitHtml;
+    }
+}
+
+function setupAnalyticsMonthlyPeriodSelector() {
+    const chartCard = document.querySelector('#analyticsMonthlyBreakdown')?.closest('.card');
+    if (!chartCard) return;
+
+    const titleEl = chartCard.querySelector('.card-title');
+    if (titleEl) {
+        titleEl.innerHTML = `<i class="fas fa-calendar-alt"></i> ${analyticsMonthlyBreakdownPeriod}-Month Breakdown`;
+    }
+
+    let selector = chartCard.querySelector('.monthly-period-selector');
+    if (!selector) {
+        selector = document.createElement('div');
+        selector.className = 'monthly-period-selector';
+        selector.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
+        selector.setAttribute('role', 'group');
+        selector.setAttribute('aria-label', 'Monthly breakdown period selector');
+        
+        const canvas = chartCard.querySelector('canvas');
+        if (canvas) chartCard.insertBefore(selector, canvas);
+        
+        const periods = [3, 6, 12];
+        periods.forEach(p => {
+            const isActive = analyticsMonthlyBreakdownPeriod === p;
+            const btn = document.createElement('button');
+            btn.className = `btn btn-xs btn-secondary period-btn-monthly${isActive ? ' active' : ''}`;
+            btn.textContent = `${p}M`;
+            btn.dataset.period = p;
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            btn.setAttribute('aria-label', `${p} Months`);
+            btn.addEventListener('click', (e) => {
+                analyticsMonthlyBreakdownPeriod = parseInt(e.target.dataset.period, 10);
+                refreshAnalytics(); 
+            });
+            selector.appendChild(btn);
+        });
+    } else {
+        selector.querySelectorAll('.period-btn-monthly').forEach(btn => {
+            const isActive = parseInt(btn.dataset.period, 10) === analyticsMonthlyBreakdownPeriod;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    }
+}
+
+function setupAnalyticsTrendPeriodSelector() {
+    const chartCard = document.querySelector('#analyticsBalanceTrend')?.closest('.card');
+    if (!chartCard) return;
+
+    const titleEl = chartCard.querySelector('.card-title');
+    if (titleEl) {
+        titleEl.innerHTML = `<i class="fas fa-chart-line"></i> ${analyticsExpenseTrendPeriod}-Month Expense Trend`;
+    }
+
+    let selector = chartCard.querySelector('.trend-period-selector-analytics');
+    if (!selector) {
+        selector = document.createElement('div');
+        selector.className = 'trend-period-selector-analytics';
+        selector.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
+        selector.setAttribute('role', 'group');
+        selector.setAttribute('aria-label', 'Expense trend period selector');
+        
+        const canvas = chartCard.querySelector('canvas');
+        if (canvas) chartCard.insertBefore(selector, canvas);
+        
+        const periods = [3, 6, 12];
+        periods.forEach(p => {
+            const isActive = analyticsExpenseTrendPeriod === p;
+            const btn = document.createElement('button');
+            btn.className = `btn btn-xs btn-secondary period-btn-trend-analytics${isActive ? ' active' : ''}`;
+            btn.textContent = `${p}M`;
+            btn.dataset.period = p;
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            btn.setAttribute('aria-label', `${p} Months`);
+            btn.addEventListener('click', (e) => {
+                analyticsExpenseTrendPeriod = parseInt(e.target.dataset.period, 10);
+                refreshAnalytics(); 
+            });
+            selector.appendChild(btn);
+        });
+    } else {
+        selector.querySelectorAll('.period-btn-trend-analytics').forEach(btn => {
+            const isActive = parseInt(btn.dataset.period, 10) === analyticsExpenseTrendPeriod;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
     }
 }

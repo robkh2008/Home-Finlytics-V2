@@ -12,7 +12,7 @@ function refreshAddFormCategories() {
                 catSelect.innerHTML = '<option value="Settlement" selected>Settlement</option>';
             } else {
                 const cats = state.categories[type] || state.categories['expense'] || [];
-                catSelect.innerHTML = '<option value="">Select</option>' + cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+                catSelect.innerHTML = '<option value="">Select</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
             }
         }
         // Also reset subcategory dropdown when category changes
@@ -49,10 +49,10 @@ function updateSubcategoryDropdown() {
                 }
             });
 
-            optionsHTML += ungrouped.map(sub => `<option value="${sub}">${sub}</option>`).join('');
+            optionsHTML += ungrouped.map(sub => `<option value="${escapeHTML(sub)}">${escapeHTML(sub)}</option>`).join('');
             for (let g in groups) {
-                optionsHTML += `<optgroup label="${g}">`;
-                optionsHTML += groups[g].map(sub => `<option value="${sub}">${sub.split(':').slice(1).join(':').trim()}</option>`).join('');
+                optionsHTML += `<optgroup label="${escapeHTML(g)}">`;
+                optionsHTML += groups[g].map(sub => `<option value="${escapeHTML(sub)}">${escapeHTML(sub.split(':').slice(1).join(':').trim())}</option>`).join('');
                 optionsHTML += `</optgroup>`;
             }
             
@@ -62,6 +62,12 @@ function updateSubcategoryDropdown() {
                 // Disable the dropdown if no subcategories exist
                 subSelect.disabled = true;
             }
+            
+            // Always add the "Add new..." option at the end if admin
+            if (state.userRole === 'admin') {
+                optionsHTML += '<option value="__new__">+ Add new...</option>';
+                subSelect.disabled = false;
+            }
         } else {
             // Disable the dropdown if no category is selected
             subSelect.disabled = true;
@@ -69,4 +75,10 @@ function updateSubcategoryDropdown() {
 
         // Inject into the DOM exactly once
         subSelect.innerHTML = optionsHTML;
+
+        // Hide the custom input row if visible and not relevant
+        const row = document.getElementById('addCustomSubcatRow');
+        if (row && subSelect.value !== '__new__') {
+            row.style.display = 'none';
+        }
 }

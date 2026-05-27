@@ -4,7 +4,7 @@ function refreshReceiptForm() {
     const sel = document.getElementById('receiptHouse');
     if (sel) {
         sel.innerHTML = '<option value="">Select</option>' +
-            state.houses.map(h => `<option value="${h.id}">House ${h.houseNo} - ${h.tenant} (Owner: ${h.owner})</option>`).join('');
+            state.houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)} (Owner: ${escapeHTML(h.owner)})</option>`).join('');
             
     }
     
@@ -21,6 +21,9 @@ function refreshReceiptForm() {
     // FIX: Use class selector for form total
     const formTotal = document.querySelector('#receiptForm .receipt-total-form');
     if (formTotal) formTotal.innerHTML = '<strong>Total: ₹0.00</strong>';
+
+    const rateLabel = document.getElementById('electricRateLabel');
+    if (rateLabel) rateLabel.textContent = (state.currency || '₹') + (state.electricRate || 8);
 }
 
 function generateReceipt() {
@@ -67,23 +70,24 @@ function generateReceipt() {
             const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
             const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
             const units = Math.max(0, curr - prev);
-            const elec = units * 8;
+        const rate = state.electricRate || 8;
+        const elec = units * rate;
             total += elec;
-            details += `Electric Bill: ${units} units × ₹8 = ${formatCurrency(elec)}\n`;
+        details += `Electric Bill: ${units} units × ${state.currency || '₹'}${rate} = ${formatCurrency(elec)}\n`;
         }
         
         const adj1 = parseFloat(document.getElementById('adj1Amount')?.value) || 0;
         if (adj1 > 0) {
             const sign = document.getElementById('adj1Type')?.value === 'add' ? '+' : '-';
             total += (document.getElementById('adj1Type')?.value === 'add' ? adj1 : -adj1);
-            details += `Adjustment 1 (${sign}): ${formatCurrency(adj1)} - ${document.getElementById('adj1Comment')?.value || ''}\n`;
+            details += `Adjustment 1 (${sign}): ${formatCurrency(adj1)} - ${escapeHTML(document.getElementById('adj1Comment')?.value || '')}\n`;
         }
         
         const adj2 = parseFloat(document.getElementById('adj2Amount')?.value) || 0;
         if (adj2 > 0) {
             const sign = document.getElementById('adj2Type')?.value === 'add' ? '+' : '-';
             total += (document.getElementById('adj2Type')?.value === 'add' ? adj2 : -adj2);
-            details += `Adjustment 2 (${sign}): ${formatCurrency(adj2)} - ${document.getElementById('adj2Comment')?.value || ''}\n`;
+            details += `Adjustment 2 (${sign}): ${formatCurrency(adj2)} - ${escapeHTML(document.getElementById('adj2Comment')?.value || '')}\n`;
         }
         total = Math.max(0, total);
         
@@ -95,7 +99,7 @@ function generateReceipt() {
         paper.innerHTML = `
             <div class="receipt-header" style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #ccc; padding-bottom: 12px; margin-bottom: 16px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23007aff'/%3E%3Ctext x='50' y='65' font-size='40' text-anchor='middle' fill='white'%3E💰%3C/text%3E%3C/svg%3E" alt="logo" width="55" height="55">
+                    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23007aff'/%3E%3Ctext x='50' y='65' font-size='40' text-anchor='middle' fill='white'%3E💰%3C/text%3E%3C/svg%3E" alt="Home Finlytics Logo" width="55" height="55">
                     <div>
                         <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Home Finlytics</h2>
                         <small style="color: #666; font-size: 0.85rem;">Property Management</small>
@@ -106,22 +110,22 @@ function generateReceipt() {
                 </div>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:0.95rem; margin-bottom:14px; background: #f9f9f9; padding: 10px; border-radius: 6px; border: 1px solid #eee; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                <span>Receipt No: <strong>${receiptNo}</strong></span>
+                <span>Receipt No: <strong>${escapeHTML(receiptNo)}</strong></span>
                 <span>Date: <strong>${safeIssueDate}</strong></span>
             </div>
-            <p><strong>Received From:</strong> ${payerName}</p>
-            <p><strong>House:</strong> No. ${house.houseNo}, ${house.address}</p>
-            <p><strong>Tenant:</strong> ${house.tenant}</p>
-            <p><strong>Owner:</strong> ${house.owner}</p>
-            <p><strong>Period:</strong> ${formatPeriodMonth(periodMonth)}</p>
-            <p><strong>Payment Mode:</strong> ${paymentMode}</p>
+            <p><strong>Received From:</strong> ${escapeHTML(payerName)}</p>
+            <p><strong>House:</strong> No. ${escapeHTML(house.houseNo)}, ${escapeHTML(house.address)}</p>
+            <p><strong>Tenant:</strong> ${escapeHTML(house.tenant)}</p>
+            <p><strong>Owner:</strong> ${escapeHTML(house.owner)}</p>
+            <p><strong>Period:</strong> ${escapeHTML(formatPeriodMonth(periodMonth))}</p>
+            <p><strong>Payment Mode:</strong> ${escapeHTML(paymentMode)}</p>
             <hr>
             <pre style="white-space:pre-wrap;">${details}</pre>
             <hr>
             <h4 style="text-align:right;">Total: ${formatCurrency(total)}</h4>
             <div style="margin-top:20px; display:flex; justify-content:space-between;">
                 <div>Signature: _______________</div>
-                <div style="font-family:monospace; letter-spacing:3px; transform:scaleX(0.5); transform-origin:right center; opacity:0.5;">*${receiptNo.replace(/-/g,'')}*</div>
+                <div style="font-family:monospace; letter-spacing:3px; transform:scaleX(0.5); transform-origin:right center; opacity:0.5;">*${escapeHTML(receiptNo.replace(/-/g,''))}*</div>
             </div>
             <small style="display:block; text-align:center; color:#888; margin-top:10px;">Generated by Home Finlytics on ${new Date().toLocaleString()}</small>
         `;
@@ -157,7 +161,8 @@ function generateReceipt() {
             houseId: house.id,
             receiptNo: receiptNo
         };
-        addTransaction(rentTransaction, true);
+        const savedTx = addTransaction(rentTransaction, true);
+        if (!savedTx) return; // Abort if transaction failed validation (e.g., amount <= 0)
 
         // Add payer to list if new
         if (payerName && !state.payers.includes(payerName)) {
@@ -171,7 +176,7 @@ function generateReceipt() {
         // FIX: Reliable print button setup using parentNode.replaceChild
         setupPrintButton();
 
-        showReceiptActionButtons();
+        showReceiptActionButtons(receiptNo);
         
     } catch (err) {
         console.error('Receipt generation failed:', err);
@@ -201,7 +206,7 @@ window.addEventListener('afterprint', () => {
     document.body.classList.remove('printing-receipt');
 });
 
-function showReceiptActionButtons() {
+function showReceiptActionButtons(receiptNo = '') {
     const previewCard = document.getElementById('receiptPreviewCard');
     if (!previewCard) return;
 
@@ -252,7 +257,7 @@ function showReceiptActionButtons() {
                 } else {
                     showToast('Web Share API not supported on this device.', 'exclamation-triangle');
                 }
-            }, 'image/png');
+            }, 'image/jpeg', 0.9);
         } catch (e) {
             console.error(e);
             showToast('Failed to generate image for sharing.', 'times-circle');
@@ -264,9 +269,13 @@ function showReceiptActionButtons() {
         const receiptPaper = document.getElementById('receiptPaper');
         if (!receiptPaper) return;
         try {
+            if (typeof html2canvas === 'undefined') {
+                showToast('html2canvas library is missing.', 'exclamation-triangle');
+                return;
+            }
             const canvas = await html2canvas(receiptPaper, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
             const link = document.createElement('a');
-            link.download = `Receipt.jpg`;
+            link.download = `Receipt_${receiptNo}.jpg`;
             link.href = canvas.toDataURL('image/jpeg', 0.9);
             link.click();
             showToast('JPG downloaded!', 'check-circle');

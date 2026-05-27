@@ -4,6 +4,17 @@ function generateId() {
     return 'tx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 }
 
+function escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+    }[tag] || tag));
+}
+
 function formatCurrency(amount) {
     const sym = state.currency || '₹';
     const num = parseFloat(amount);
@@ -20,7 +31,7 @@ function getCategoryColor(catName, type) {
     if (catName === 'Returned') return '#34c759';
     const cats = state.categories?.[type] || [];
     const found = cats.find(c => c.name.toLowerCase() === catName.toLowerCase());
-    return found ? found.color : '#8e8e93';
+    return found?.color || '#8e8e93';
 }
 
 function getCategoryIcon(catName, type) {
@@ -29,15 +40,21 @@ function getCategoryIcon(catName, type) {
     if (catName === 'Returned') return '📥';
     const cats = state.categories?.[type] || [];
     const found = cats.find(c => c.name.toLowerCase() === catName.toLowerCase());
-    return found ? found.icon : '';
+    return found?.icon ? escapeHTML(found.icon) : '📁';
 }
 
 function showToast(msg, icon = 'info-circle') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
+    
+    // Limit on-screen toasts to 3 for better UX
+    while (container.childElementCount >= 3) {
+        container.firstChild.remove();
+    }
+
     const toast = document.createElement('div');
     toast.className = 'toast';
-    toast.innerHTML = `<i class="fas fa-${icon}" style="margin-right:6px;"></i> ${msg}`;
+    toast.innerHTML = `<i class="fas fa-${escapeHTML(icon)}" style="margin-right:6px;"></i> ${escapeHTML(msg)}`;
     container.appendChild(toast);
     setTimeout(() => {
         toast.classList.add('removing');
@@ -47,14 +64,34 @@ function showToast(msg, icon = 'info-circle') {
     }, 2000);
 }
 
-function showConfirm(title, msg, icon, onConfirm) {
+function showConfirm(title, msg, icon, onConfirm, requiredText = null) {
     const modal = document.getElementById('confirmModal');
     if (!modal) return;
     document.getElementById('confirmTitle').textContent = title;
     document.getElementById('confirmMessage').textContent = msg;
-    document.getElementById('confirmIcon').innerHTML = `<i class="fas fa-${icon}"></i>`;
-    modal.style.display = 'flex';
+    document.getElementById('confirmIcon').innerHTML = `<i class="fas fa-${escapeHTML(icon)}"></i>`;
+    
+    const input = document.getElementById('confirmInput');
     const okBtn = document.getElementById('confirmOk');
+    
+    if (input) {
+        if (requiredText) {
+            input.style.display = 'block';
+            input.value = '';
+            input.placeholder = `Type "${requiredText}"`;
+            okBtn.disabled = true;
+            input.oninput = () => {
+                okBtn.disabled = input.value !== requiredText;
+            };
+        } else {
+            input.style.display = 'none';
+            okBtn.disabled = false;
+            input.oninput = null;
+        }
+    }
+
+    modal.style.display = 'flex';
+    if (input && requiredText) input.focus();
     const cancelBtn = document.getElementById('confirmCancel');
 
     const handler = () => {
@@ -91,9 +128,16 @@ function formatPeriodMonth(monthStr) { // "2026-05" -> "May 2026"
 
 // Utility: convert hex color to rgba (used by analytics charts)
 function hexToRgba(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16),
-          g = parseInt(hex.slice(3, 5), 16),
-          b = parseInt(hex.slice(5, 7), 16);
+    let validHex = typeof hex === 'string' ? hex.trim() : '';
+    if (!/^#([0-9A-Fa-f]{3}){1,2}$/.test(validHex)) {
+        validHex = '#8e8e93'; // Fallback gray if malformed
+    }
+    if (validHex.length === 4) {
+        validHex = '#' + validHex[1] + validHex[1] + validHex[2] + validHex[2] + validHex[3] + validHex[3];
+    }
+    const r = parseInt(validHex.slice(1, 3), 16),
+          g = parseInt(validHex.slice(3, 5), 16),
+          b = parseInt(validHex.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
@@ -103,19 +147,23 @@ function getStringColor(str) {
     for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const colors = ['#007aff', '#34c759', '#ff9500', '#ff3b30', '#af52de', '#5856d6', '#ff2d55', '#e83e8c', '#20c997', '#17a2b8'];
+    
+    // High-contrast palettes for WCAG AA compliance in both themes
+    const darkThemeColors = ['#339af0', '#34c759', '#ffaa00', '#ff5252', '#d08cf2', '#8c82f0', '#ff6b8b', '#ff79c6', '#20c997', '#4dd0e1'];
+    const lightThemeColors = ['#005bb5', '#1e7b1e', '#d97706', '#d32f2f', '#6f42c1', '#4b0082', '#c71585', '#008b8b', '#005f73', '#996515'];
+    
+    const colors = state.theme === 'light' ? lightThemeColors : darkThemeColors;
+    
     return colors[Math.abs(hash) % colors.length];
 }
 
 function getVisibleTransactions() {
     if (!state.transactions) return [];
     
-    // Globally ignore removed legacy types (income, settlement, lent, returned)
-    const validTxs = state.transactions.filter(tx => tx.type === 'expense' || tx.type === 'groceries');
-
-    if (state.userRole === 'admin') return validTxs;
+    if (state.userRole === 'admin') return state.transactions;
+    
     // For non-admin users, restrict access to Groceries and Rent only
-    return validTxs.filter(tx => 
+    return state.transactions.filter(tx => 
         tx.type === 'groceries' || (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
     );
 }

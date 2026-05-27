@@ -1,13 +1,13 @@
 // js/firebase-sync.js
 
 // 1. Import Firebase functions from the npm package
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref, update, onValue } from "firebase/database";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 // 2. Paste YOUR config object here
 const firebaseConfig = {
-  apiKey: "AIzaSyCyQSmqnvXm3vl43AuVNXLZG6eSP7Qa3CQ",
+  apiKey: "AIzaSyDfxpmyaBX6Goe7YJk0YRWKQgiTfEn8wrs",
   authDomain: "myfinancehub-78207.firebaseapp.com",
   databaseURL: "https://myfinancehub-78207-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "myfinancehub-78207",
@@ -170,22 +170,34 @@ window.detachFirebaseListeners = detachFirebaseListeners;
 window.listenToConnectionStatus = listenToConnectionStatus;
 
 // 8. Auth logic: Only sync if logged in
-window.showLoginUI = () => {
+window.showLoginUI = (isMandatory = false) => {
     if (document.getElementById('firebaseLoginModal')) return;
     const modal = document.createElement('div');
     modal.id = 'firebaseLoginModal';
-    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);animation:fbBackdropFade 0.3s ease-out;';
     modal.innerHTML = `
-        <div class="glass-card" style="width:90%;max-width:320px;padding:24px;text-align:center;">
-            <h3 style="margin-top:0;margin-bottom:8px;">Cloud Sync</h3>
-            <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">Log in to enable real-time Firebase sync.</p>
+        <style>
+            @keyframes fbBackdropFade { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes fbModalPop { from { opacity: 0; transform: scale(0.95) translateY(15px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        </style>
+        <div class="glass-card" style="width:90%;max-width:320px;padding:24px;text-align:center;animation:fbModalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
+            <h3 id="fbLoginTitle" style="margin-top:0;margin-bottom:8px;">${isMandatory ? 'Home Finlytics' : 'Cloud Sync'}</h3>
+            <p id="fbLoginDesc" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">${isMandatory ? 'Log in to access your dashboard.' : 'Log in to enable real-time Firebase sync.'}</p>
             <input type="email" id="fbLoginEmail" placeholder="Email Address" class="form-input" style="margin-bottom:12px;width:100%;box-sizing:border-box;">
-            <input type="password" id="fbLoginPwd" placeholder="Password" class="form-input" style="margin-bottom:8px;width:100%;box-sizing:border-box;">
-            <div style="text-align: right; margin-bottom: 16px;">
-                <a href="#" id="fbForgotPassword" style="font-size: 0.8rem; color: var(--accent); text-decoration: none;">Forgot Password?</a>
+            <div style="position:relative; margin-bottom:8px;">
+                <input type="password" id="fbLoginPwd" placeholder="Password" class="form-input" style="width:100%;box-sizing:border-box;padding-right:32px;">
+                <i class="fas fa-eye fb-toggle-pwd" data-target="fbLoginPwd" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--text-tertiary);"></i>
+            </div>
+            <div id="fbLoginConfirmPwdWrap" style="position:relative; margin-bottom:8px; display:none;">
+                <input type="password" id="fbLoginConfirmPwd" placeholder="Confirm Password" class="form-input" style="width:100%;box-sizing:border-box;padding-right:32px;">
+                <i class="fas fa-eye fb-toggle-pwd" data-target="fbLoginConfirmPwd" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--text-tertiary);"></i>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <a href="#" id="fbToggleMode" style="font-size: 0.8rem; color: var(--accent); text-decoration: none;">Create Account</a>
+                <a href="#" id="fbForgotPassword" style="font-size: 0.8rem; color: var(--text-secondary); text-decoration: none;">Forgot Password?</a>
             </div>
             <div style="display:flex;gap:10px;">
-                <button id="fbLoginCancel" class="btn btn-secondary" style="flex:1;">Cancel</button>
+                ${!isMandatory ? '<button id="fbLoginCancel" class="btn btn-secondary" style="flex:1;">Cancel</button>' : ''}
                 <button id="fbLoginBtn" class="btn btn-primary" style="flex:1;">Log In</button>
             </div>
             <p id="fbLoginError" style="color:var(--danger);font-size:0.8rem;margin-top:12px;display:none;"></p>
@@ -193,21 +205,94 @@ window.showLoginUI = () => {
     `;
     document.body.appendChild(modal);
 
+    modal.querySelectorAll('.fb-toggle-pwd').forEach(icon => {
+        icon.addEventListener('click', (e) => {
+            const targetId = e.target.getAttribute('data-target');
+            const input = document.getElementById(targetId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                e.target.classList.replace('fa-eye', 'fa-eye-slash');
+            } else {
+                input.type = 'password';
+                e.target.classList.replace('fa-eye-slash', 'fa-eye');
+            }
+        });
+    });
+
+    let isSignUpMode = false;
+
+    document.getElementById('fbToggleMode').addEventListener('click', (e) => {
+        e.preventDefault();
+        isSignUpMode = !isSignUpMode;
+        
+        const btn = document.getElementById('fbLoginBtn');
+        const title = document.getElementById('fbLoginTitle');
+        const desc = document.getElementById('fbLoginDesc');
+        const toggleBtn = document.getElementById('fbToggleMode');
+        const forgotPwd = document.getElementById('fbForgotPassword');
+        const confirmPwdWrap = document.getElementById('fbLoginConfirmPwdWrap');
+        
+        if (isSignUpMode) {
+            btn.textContent = 'Sign Up';
+            title.textContent = 'Create Account';
+            desc.textContent = 'Sign up for a new account.';
+            toggleBtn.textContent = 'Back to Log In';
+            forgotPwd.style.display = 'none';
+            confirmPwdWrap.style.display = 'block';
+        } else {
+            btn.textContent = 'Log In';
+            title.textContent = isMandatory ? 'Home Finlytics' : 'Cloud Sync';
+            desc.textContent = isMandatory ? 'Log in to access your dashboard.' : 'Log in to enable real-time Firebase sync.';
+            toggleBtn.textContent = 'Create Account';
+            forgotPwd.style.display = 'inline';
+            confirmPwdWrap.style.display = 'none';
+        }
+    });
+
     document.getElementById('fbLoginBtn').addEventListener('click', () => {
         const email = document.getElementById('fbLoginEmail').value;
         const pwd = document.getElementById('fbLoginPwd').value;
         const errEl = document.getElementById('fbLoginError');
         errEl.style.display = 'none';
         
-        signInWithEmailAndPassword(auth, email, pwd)
-            .then(() => {
-                modal.remove();
-                if (typeof showToast === 'function') showToast('Logged in to Firebase!', 'cloud');
-            })
-            .catch(err => {
-                errEl.textContent = err.message;
+        if (!email || !pwd) {
+            errEl.textContent = 'Please enter both email and password.';
+            errEl.style.display = 'block';
+            return;
+        }
+
+        if (isSignUpMode) {
+            const confirmPwdVal = document.getElementById('fbLoginConfirmPwd').value;
+            if (pwd !== confirmPwdVal) {
+                errEl.textContent = 'Passwords do not match.';
                 errEl.style.display = 'block';
-            });
+                return;
+            }
+            if (pwd.length < 6) {
+                errEl.textContent = 'Password must be at least 6 characters long.';
+                errEl.style.display = 'block';
+                return;
+            }
+            createUserWithEmailAndPassword(auth, email, pwd)
+                .then(() => {
+                    modal.remove();
+                    if (typeof showToast === 'function') showToast('Account created and logged in!', 'user-plus');
+                })
+                .catch(err => {
+                    errEl.textContent = err.message;
+                    errEl.style.display = 'block';
+                });
+        } else {
+            signInWithEmailAndPassword(auth, email, pwd)
+                .then(() => {
+                    modal.remove();
+                    if (typeof showToast === 'function') showToast('Logged in to Firebase!', 'cloud');
+                })
+                .catch(err => {
+                    errEl.textContent = err.message;
+                    errEl.style.display = 'block';
+                });
+        }
     });
 
     document.getElementById('fbForgotPassword').addEventListener('click', (e) => {
@@ -232,12 +317,14 @@ window.showLoginUI = () => {
             });
     });
 
-    document.getElementById('fbLoginCancel').addEventListener('click', () => modal.remove());
+    if (!isMandatory) {
+        document.getElementById('fbLoginCancel').addEventListener('click', () => modal.remove());
+    }
 };
 
 onAuthStateChanged(auth, (user) => {
-    if (user) {
-        // This is now handled in app.js to pass the user role
+    if (typeof window.handleAuthStateChanged === 'function') {
+        window.handleAuthStateChanged(user);
     }
 });
 

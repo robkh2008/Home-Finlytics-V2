@@ -7,6 +7,7 @@ let state = {
     payers: [...DEFAULT_PAYERS],
     budgets: {},
     currency: '₹',
+    electricRate: 8,
     theme: window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
     fontSize: '15',
     recurringTemplates: [],
@@ -38,6 +39,7 @@ function resetState() {
     state.categories = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : { expense: [], groceries: [] };
     state.payers = [...(typeof DEFAULT_PAYERS !== 'undefined' ? DEFAULT_PAYERS : [])];
     state.budgets = {};
+    state.electricRate = 8;
     state.recurringTemplates = [];
     state.selectedTxIds = new Set();
     state.bulkSelectMode = false;
@@ -128,6 +130,8 @@ function applyTheme() {
     document.documentElement.style.setProperty('--font-size-xxl', (parseInt(state.fontSize)+13)+'px');
     const track = document.getElementById('themeToggleTrack');
     if(track) track.classList.toggle('active', state.theme==='dark');
+    const wrap = document.getElementById('themeToggleWrap');
+    if(wrap) wrap.setAttribute('aria-checked', state.theme === 'dark' ? 'true' : 'false');
     applyRoleRestrictions();
 }
 
@@ -156,7 +160,6 @@ function navigateTo(screenId) {
     if(screenId==='screenAnalytics') refreshAnalytics();
     if(screenId==='screenSettings') refreshSettings();
     if(screenId==='screenAdd') refreshAddForm();
-    if(screenId==='screenReceipt') refreshReceiptForm();
     if(screenId==='screenReceipt') {
         refreshReceiptForm();
         const previewCard = document.getElementById('receiptPreviewCard');
@@ -179,34 +182,56 @@ function refreshAllCharts() {
 }
 
 // ==================== Event Binding ====================
-function bindEvents() {
-    // Tab navigation
+function bindNavigationEvents() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => navigateTo(btn.dataset.screen));
+        btn.addEventListener('click', () => {
+            if (btn.dataset.screen === 'screenAdd') {
+                const form = document.getElementById('addTransactionForm');
+                if (form) {
+                    form.dataset.editId = '';
+                    form.dataset.editTemplateIndex = '';
+                }
+            }
+            navigateTo(btn.dataset.screen);
+        });
     });
     document.getElementById('settingsFloatingBtn')?.addEventListener('click', () => navigateTo('screenSettings'));
+}
 
-    // Theme & font size
-    document.getElementById('themeToggleWrap')?.addEventListener('click', toggleTheme);
-    document.getElementById('fontSizeSelect')?.addEventListener('change', function() {
-        state.fontSize = this.value; applyTheme(); saveState(); refreshAllCharts();
+function bindDashboardEvents() {
+    document.getElementById('budgetOverviewList')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.share-budget-btn');
+        if (btn) {
+            e.stopPropagation();
+            const cat = btn.dataset.cat;
+            const spent = btn.dataset.spent;
+            const limit = btn.dataset.limit;
+            const pct = Math.round((parseFloat(spent) / parseFloat(limit)) * 100);
+            const text = `Budget update for ${cat}: Spent ${typeof formatCurrency === 'function' ? formatCurrency(spent) : spent} of ${typeof formatCurrency === 'function' ? formatCurrency(limit) : limit} (${pct}% used).`;
+            
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'Budget Update', text });
+                } catch (err) {
+                    navigator.clipboard.writeText(text).then(() => { if (typeof showToast === 'function') showToast('Copied to clipboard!', 'copy'); });
+                }
+            } else {
+                navigator.clipboard.writeText(text).then(() => { if (typeof showToast === 'function') showToast('Copied to clipboard!', 'copy'); });
+            }
+        }
     });
+}
 
-    // Currency
-    document.getElementById('currencySelect')?.addEventListener('change', function() {
-        state.currency = this.value; saveState(); refreshAll(); showToast('Currency updated to ' + this.value, 'coins');
-    });
-
-    // Add transaction form
+function bindTransactionEvents() {
     document.getElementById('addCategory')?.addEventListener('change', updateSubcategoryDropdown);
     document.getElementById('addType')?.addEventListener('change', () => {
         refreshAddForm();
         updateSubcategoryDropdown();
     });
-    document.getElementById('addPayer')?.addEventListener('change', () => { if (typeof updateSplitCheckboxes === 'function') updateSplitCheckboxes(); });
     document.getElementById('addTransactionForm')?.addEventListener('submit', function(e) {
         e.preventDefault();
         const editId = this.dataset.editId;
+        const editTemplateIndex = this.dataset.editTemplateIndex;
         const typeVal = document.getElementById('addType').value;   // FIX: undefined variable
         const splitWith = Array.from(document.querySelectorAll('#addSplitCheckboxes input:checked')).map(cb => cb.value);
         const txData = {
@@ -217,17 +242,35 @@ function bindEvents() {
             date: document.getElementById('addDate').value,
             notes: document.getElementById('addNotes').value || '',
             payer: state.currentUser ? state.currentUser.name : 'Unknown',
+            paymentMethod: document.getElementById('addPaymentMethod')?.value || 'cash',
             splitWith: splitWith.length > 0 ? splitWith : null,
             houseId: '', // Handled directly in receipt generator now
-            paymentMethod: document.getElementById('addPaymentMethod')?.value || 'cash',
         };
+            if (editTemplateIndex !== undefined && editTemplateIndex !== '') {
+            const idx = parseInt(editTemplateIndex);
+            state.recurringTemplates[idx] = {
+                category: txData.category,
+                subcategory: txData.subcategory,
+                amount: txData.amount,
+                type: txData.type,
+                paymentMethod: txData.paymentMethod
+            };
+            saveState();
+            this.dataset.editTemplateIndex = '';
+            this.reset();
+            refreshAddForm();
+            showToast('Template updated!', 'check-circle');
+            return;
+        }
         if (editId) {
-            updateTransaction(editId, txData);
+            const updated = updateTransaction(editId, txData);
+            if (!updated) return; // Abort if update validation failed
             this.dataset.editId = '';
         } else {
             const tx = addTransaction(txData);
+            if (!tx) return; // Abort if add validation failed
             if (document.getElementById('addIsRecurring')?.checked) {
-                state.recurringTemplates.push({ category: txData.category, amount: txData.amount, type: txData.type, paymentMethod: txData.paymentMethod });
+                state.recurringTemplates.push({ category: txData.category, subcategory: txData.subcategory, amount: txData.amount, type: txData.type, paymentMethod: txData.paymentMethod });
                 saveState();
             }
         }
@@ -244,73 +287,6 @@ function bindEvents() {
         }, 10);
     });
 
-    // Settings – categories & subcategories
-    document.getElementById('settingsCatType')?.addEventListener('change', () => {
-        refreshSettingsCatList();
-        populateSettingsCategorySelect();
-        refreshSubcategoryList();
-    });
-    document.getElementById('settingsCategorySelect')?.addEventListener('change', refreshSubcategoryList);
-
-    // Add subcategory in Settings
-    document.getElementById('addSubcatBtn')?.addEventListener('click', () => {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
-        const type = document.getElementById('settingsCatType').value;
-        const catName = document.getElementById('settingsCategorySelect').value;
-        const subName = document.getElementById('newSubcatName').value.trim();
-        if (!catName || !subName) return showToast('Select category and enter subcategory name', 'exclamation-triangle');
-        const cats = state.categories[type] || [];
-        const cat = cats.find(c => c.name === catName);
-        if (!cat) return;
-        if (!cat.subcategories) cat.subcategories = [];
-        if (cat.subcategories.includes(subName)) return showToast('Subcategory already exists', 'exclamation-triangle');
-        cat.subcategories.push(subName);
-        saveState();
-        refreshSubcategoryList();
-        document.getElementById('newSubcatName').value = '';
-        showToast('Subcategory added!', 'check-circle');
-    });
-
-    // Remove subcategory (delegated)
-    document.getElementById('subcatList')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.remove-subcat-btn');
-        if (!btn) return;
-        if (state.userRole !== 'admin') return;
-        const catName = btn.dataset.cat;
-        const sub = btn.dataset.sub;
-        const type = document.getElementById('settingsCatType').value;
-        const cats = state.categories[type] || [];
-        const cat = cats.find(c => c.name === catName);
-        if (cat) cat.subcategories = cat.subcategories.filter(s => s !== sub);
-        saveState();
-        refreshSubcategoryList();
-        showToast('Subcategory removed.', 'trash-alt');
-    });
-
-    // Payers
-    document.getElementById('addPayerBtn')?.addEventListener('click', () => {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
-        const name = document.getElementById('newPayerName').value.trim();
-        if (!name) return showToast('Enter a name', 'exclamation-triangle');
-        if (state.payers.includes(name)) return showToast('Name already exists', 'exclamation-triangle');
-        state.payers.push(name);
-        saveState();
-        renderPayerList();
-        document.getElementById('newPayerName').value = '';
-        showToast('Payer added!', 'check-circle');
-    });
-    document.getElementById('payerList')?.addEventListener('click', (e) => {
-        if (state.userRole !== 'admin') return;
-        const btn = e.target.closest('.remove-payer-btn');
-        if (!btn) return;
-        const index = parseInt(btn.dataset.index);
-        state.payers.splice(index, 1);
-        saveState();
-        renderPayerList();
-        showToast('Payer removed.', 'trash-alt');
-    });
-
-    // Recurring templates – load & delete (merged delegate)
     document.getElementById('recurringTemplatesList')?.addEventListener('click', function(e) {
         const loadBtn = e.target.closest('.load-template-btn');
         if (loadBtn) {
@@ -318,12 +294,33 @@ function bindEvents() {
             const t = state.recurringTemplates[idx];
             if (t) {
                 document.getElementById('addType').value = t.type;
+                refreshAddForm();
                 document.getElementById('addCategory').value = t.category;
+                if (typeof updateSubcategoryDropdown === 'function') updateSubcategoryDropdown();
+                document.getElementById('addSubcategory').value = t.subcategory || '';
                 document.getElementById('addAmount').value = t.amount;
                 document.getElementById('addPaymentMethod').value = t.paymentMethod || 'cash';
                 document.getElementById('addDate').value = new Date().toISOString().slice(0, 10);
-                refreshAddForm();
                 showToast('Template loaded!', 'redo');
+            }
+            return;
+        }
+        const editBtn = e.target.closest('.edit-template-btn');
+        if (editBtn) {
+            const idx = parseInt(editBtn.dataset.index);
+            const t = state.recurringTemplates[idx];
+            if (t) {
+                const form = document.getElementById('addTransactionForm');
+                form.dataset.editTemplateIndex = idx;
+                document.getElementById('addType').value = t.type;
+                refreshAddForm();
+                document.getElementById('addCategory').value = t.category;
+                if (typeof updateSubcategoryDropdown === 'function') updateSubcategoryDropdown();
+                document.getElementById('addSubcategory').value = t.subcategory || '';
+                document.getElementById('addAmount').value = t.amount;
+                document.getElementById('addPaymentMethod').value = t.paymentMethod || 'cash';
+                showToast('Editing template...', 'edit');
+                document.querySelector('#screenAdd .screen-scroll').scrollTop = 0;
             }
             return;
         }
@@ -334,7 +331,6 @@ function bindEvents() {
         }
     });
 
-    // Custom subcategory in Add Transaction
     document.getElementById('addSubcategory')?.addEventListener('change', function() {
         const row = document.getElementById('addCustomSubcatRow');
         if (this.value === '__new__') {
@@ -351,9 +347,10 @@ function bindEvents() {
         }
     });
 
-    // Transactions filters
-    ['filterType', 'filterCategory', 'filterSubcategory', 'filterSearch', 'filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax', 'sortBy'].forEach(id => {
+    ['filterSearch', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', refreshTransactionList);
+    });
+    ['filterType', 'filterCategory', 'filterSubcategory', 'filterPayer', 'filterDateFrom', 'filterDateTo', 'sortBy'].forEach(id => {
         document.getElementById(id)?.addEventListener('change', refreshTransactionList);
     });
     document.getElementById('sortToggleBtn')?.addEventListener('click', function() {
@@ -367,7 +364,7 @@ function bindEvents() {
     });
     
     const clearAllFilters = function() {
-        ['filterType', 'filterCategory', 'filterSubcategory', 'filterSearch', 'filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
+        ['filterType', 'filterCategory', 'filterSubcategory', 'filterPayer', 'filterSearch', 'filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = el.tagName === 'SELECT' ? 'all' : '';
         });
@@ -397,44 +394,69 @@ function bindEvents() {
             });
         }
     });
+}
 
-    // Analytics period
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            refreshAnalytics();
-        });
+function bindSettingsEvents() {
+    // Theme & font size
+    document.getElementById('themeToggleWrap')?.addEventListener('click', toggleTheme);
+    document.getElementById('themeToggleWrap')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTheme(); }
     });
-
-    // Receipt form – house selection + bill toggles + receipt generation
-    document.getElementById('receiptHouse')?.addEventListener('change', function() {
-        const house = state.houses.find(h => h.id === this.value);
-        if (house) document.getElementById('receiptRent').value = house.rent;
-    });
-    document.getElementById('includeWaterBill')?.addEventListener('change', function() {
-        document.getElementById('waterBillAmount').style.display = this.checked ? 'block' : 'none';
-        updateReceiptTotal();
-    });
-    document.getElementById('includeMotorBill')?.addEventListener('change', function() {
-        document.getElementById('motorBillAmount').style.display = this.checked ? 'block' : 'none';
-        updateReceiptTotal();
-    });
-    document.getElementById('includeElectricBill')?.addEventListener('change', function() {
-        document.getElementById('electricInputs').style.display = this.checked ? 'block' : 'none';
-        updateReceiptTotal();
-    });
-    ['currentUnit', 'previousUnit', 'waterBillAmount', 'motorBillAmount', 'adj1Amount', 'adj2Amount', 'adj1Type', 'adj2Type'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', updateReceiptTotal);
-        document.getElementById(id)?.addEventListener('change', updateReceiptTotal);
-    });
-    // This is the single receipt form submit – generateReceipt() lives in receiptGenerator.js
-    document.getElementById('receiptForm')?.addEventListener('submit', function(e) {
-        e.preventDefault();
-        generateReceipt();
+    document.getElementById('fontSizeSelect')?.addEventListener('change', function() {
+        state.fontSize = this.value; applyTheme(); saveState(); refreshAllCharts();
     });
 
-    // Settings – Random Category Color Button Injection
+    // Currency & Rates
+    document.getElementById('currencySelect')?.addEventListener('change', function() {
+        state.currency = this.value; saveState(); refreshAll(); showToast('Currency updated to ' + this.value, 'coins');
+    });
+    document.getElementById('settingsElectricRate')?.addEventListener('change', function() {
+        state.electricRate = parseFloat(this.value) || 8; saveState(); refreshReceiptForm(); showToast('Electric rate updated', 'bolt');
+    });
+
+    // Categories & Subcategories
+    document.getElementById('settingsCatType')?.addEventListener('change', function() {
+        const type = this.value;
+        refreshSettingsCatList(type);
+        populateSettingsCategorySelect(type);
+        refreshSubcategoryList(type);
+    });
+    document.getElementById('settingsCategorySelect')?.addEventListener('change', refreshSubcategoryList);
+
+    document.getElementById('addSubcatBtn')?.addEventListener('click', () => {
+        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        const type = document.getElementById('settingsCatType').value;
+        const catName = document.getElementById('settingsCategorySelect').value;
+        const subName = document.getElementById('newSubcatName').value.trim();
+        if (!catName || !subName) return showToast('Select category and enter subcategory name', 'exclamation-triangle');
+        const cats = state.categories[type] || [];
+        const cat = cats.find(c => c.name === catName);
+        if (!cat) return;
+        if (!cat.subcategories) cat.subcategories = [];
+        if (cat.subcategories.includes(subName)) return showToast('Subcategory already exists', 'exclamation-triangle');
+        cat.subcategories.push(subName);
+        saveState();
+        refreshSubcategoryList();
+        document.getElementById('newSubcatName').value = '';
+        showToast('Subcategory added!', 'check-circle');
+    });
+
+    document.getElementById('subcatList')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-subcat-btn');
+        if (!btn) return;
+        if (state.userRole !== 'admin') return;
+        const catName = btn.dataset.cat;
+        const sub = btn.dataset.sub;
+        const type = document.getElementById('settingsCatType').value;
+        const cats = state.categories[type] || [];
+        const cat = cats.find(c => c.name === catName);
+        if (cat) cat.subcategories = cat.subcategories.filter(s => s !== sub);
+        saveState();
+        refreshSubcategoryList();
+        showToast('Subcategory removed.', 'trash-alt');
+    });
+
+    // Category Color & Emoji Picker Injection
     const newCatColorInput = document.getElementById('newCatColor');
     if (newCatColorInput && !document.getElementById('randomCatColorBtn')) {
         const rndBtn = document.createElement('button');
@@ -452,7 +474,6 @@ function bindEvents() {
         
         newCatColorInput.parentNode.insertBefore(rndBtn, newCatColorInput.nextSibling);
 
-        // --- Emoji Icon Picker Injection ---
         const iconWrap = document.createElement('div');
         iconWrap.style.position = 'relative';
         iconWrap.style.display = 'inline-block';
@@ -501,13 +522,12 @@ function bindEvents() {
         newCatColorInput.parentNode.insertBefore(iconWrap, newCatColorInput);
     }
 
-    // Settings – Add category (no duplicate listener)
     document.getElementById('addCatBtn')?.addEventListener('click', function() {
         if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
         const type = document.getElementById('settingsCatType')?.value || 'expense';
         const name = document.getElementById('newCatName').value.trim();
         const color = document.getElementById('newCatColor').value;
-        const icon = document.getElementById('newCatIcon')?.value || '📁'; // fallback icon
+        const icon = document.getElementById('newCatIcon')?.value || '📁';
         if (!name) { showToast('Enter a category name', 'exclamation-triangle'); return; }
         if (!state.categories[type]) state.categories[type] = [];
         if (state.categories[type].find(c => c.name.toLowerCase() === name.toLowerCase())) {
@@ -517,16 +537,13 @@ function bindEvents() {
         state.categories[type].push({ name, icon, color, subcategories: [] });
         saveState();
         document.getElementById('newCatName').value = '';
-        if (document.getElementById('newCatIcon')) {
-            document.getElementById('newCatIcon').value = '';
-        }
-        if (document.getElementById('newCatColor')) {
-            document.getElementById('newCatColor').value = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
-        }
+        if (document.getElementById('newCatIcon')) document.getElementById('newCatIcon').value = '';
+        if (document.getElementById('newCatColor')) document.getElementById('newCatColor').value = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
         refreshSettingsCatList();
         refreshAll();
         showToast('Category added!', 'check-circle');
     });
+
     document.getElementById('settingsCatList')?.addEventListener('click', function(e) {
         const btn = e.target.closest('.remove-cat-btn');
         if (btn) {
@@ -539,6 +556,29 @@ function bindEvents() {
             refreshAll();
             showToast('Category removed!', 'trash-alt');
         }
+    });
+
+    // Payers
+    document.getElementById('addPayerBtn')?.addEventListener('click', () => {
+        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        const name = document.getElementById('newPayerName').value.trim();
+        if (!name) return showToast('Enter a name', 'exclamation-triangle');
+        if (state.payers.includes(name)) return showToast('Name already exists', 'exclamation-triangle');
+        state.payers.push(name);
+        saveState();
+        renderPayerList();
+        document.getElementById('newPayerName').value = '';
+        showToast('Payer added!', 'check-circle');
+    });
+    document.getElementById('payerList')?.addEventListener('click', (e) => {
+        if (state.userRole !== 'admin') return;
+        const btn = e.target.closest('.remove-payer-btn');
+        if (!btn) return;
+        const index = parseInt(btn.dataset.index);
+        state.payers.splice(index, 1);
+        saveState();
+        renderPayerList();
+        showToast('Payer removed.', 'trash-alt');
     });
 
     // Budgets
@@ -594,7 +634,7 @@ function bindEvents() {
         }
     });
 
-    // Data management
+    // Data Management
     document.getElementById('exportDataBtn')?.addEventListener('click', function() {
         if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
         const blob = new Blob([JSON.stringify({
@@ -710,34 +750,7 @@ function bindEvents() {
                 refreshAll();
                 navigateTo('screenDashboard');
                 showToast('All data cleared.', 'trash-alt');
-        });
-    });
-
-    // Export Analytics to PDF
-    let wasDarkBeforePrint = false;
-    document.getElementById('exportAnalyticsPDFBtn')?.addEventListener('click', () => {
-        wasDarkBeforePrint = state.theme === 'dark';
-        if (wasDarkBeforePrint) {
-            state.theme = 'light';
-            applyTheme();
-            refreshAnalytics(); // Re-render charts in light mode for physical paper
-        }
-        
-        document.body.classList.add('printing-analytics');
-        
-        setTimeout(() => {
-            window.print(); // Browser's native print-to-pdf dialog
-        }, 500);
-    });
-
-    window.addEventListener('afterprint', () => {
-        document.body.classList.remove('printing-analytics');
-        if (wasDarkBeforePrint) {
-            state.theme = 'dark';
-            applyTheme();
-            refreshAnalytics();
-            wasDarkBeforePrint = false;
-        }
+        }, 'DELETE');
     });
 
     // App Lock (Biometrics)
@@ -747,13 +760,11 @@ function bindEvents() {
             return;
         }
         if (state.appLock?.enabled) {
-            // Disable App Lock
             state.appLock = { enabled: false, credentialId: null };
             saveState();
             refreshSettings();
             showToast('App Lock disabled.', 'unlock');
         } else {
-            // Enable App Lock (Register Device)
             try {
                 const challenge = new Uint8Array(32);
                 crypto.getRandomValues(challenge);
@@ -764,7 +775,7 @@ function bindEvents() {
                     challenge,
                     rp: { name: "Home Finlytics" },
                     user: { id: userId, name: "User", displayName: "User" },
-                    pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
+                    pubKeyCredParams: [{ type: "public-key", alg: -7 }],
                     authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
                     timeout: 60000,
                     attestation: "none"
@@ -778,6 +789,12 @@ function bindEvents() {
                 console.error(err);
                 showToast('Failed to setup App Lock.', 'times-circle');
             }
+        }
+    });
+    document.getElementById('appLockToggleWrap')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { 
+            e.preventDefault(); 
+            document.getElementById('appLockToggleWrap').click(); 
         }
     });
 
@@ -795,32 +812,192 @@ function bindEvents() {
         }
     });
 
-    // Receipt total live update helper
-    function updateReceiptTotal() {
-        const rent = parseFloat(document.getElementById('receiptRent')?.value) || 0;
-        let total = rent;
-        if (document.getElementById('includeWaterBill')?.checked) total += parseFloat(document.getElementById('waterBillAmount')?.value) || 0;
-        if (document.getElementById('includeMotorBill')?.checked) total += parseFloat(document.getElementById('motorBillAmount')?.value) || 0;
-        if (document.getElementById('includeElectricBill')?.checked) {
-            const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
-            const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
-            const units = Math.max(0, curr - prev);
-            const elecAmt = units * 8;
-            const elecDisplay = document.getElementById('electricCalcResult');
-            if (elecDisplay) elecDisplay.textContent = `Units: ${units} | ${formatCurrency(elecAmt)}`;
-            total += elecAmt;
+    // Clear App Cache
+    document.getElementById('clearCacheBtn')?.addEventListener('click', () => {
+        showConfirm('Clear Cache', 'This will wipe the stored app files and reload. You must have an internet connection to download the latest updates. Continue?', 'broom', async () => {
+            try {
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(k => caches.delete(k)));
+                }
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    for (let r of regs) await r.unregister();
+                }
+                if (typeof showToast === 'function') showToast('Cache cleared! Reloading...', 'check-circle');
+                setTimeout(() => window.location.reload(), 1500);
+            } catch (err) {
+                console.error(err);
+                if (typeof showToast === 'function') showToast('Failed to clear cache.', 'times-circle');
+            }
+        });
+    });
+}
+
+function bindAnalyticsEvents() {
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.period-btn').forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
+            this.classList.add('active');
+            this.setAttribute('aria-pressed', 'true');
+            refreshAnalytics();
+        });
+    });
+
+    document.getElementById('analyticsSplitBalances')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.share-balance-btn');
+        if (btn) {
+            e.stopPropagation();
+            const debtor = btn.dataset.debtor;
+            const creditor = btn.dataset.creditor;
+            const amt = btn.dataset.amount;
+            const text = `${debtor} owes ${creditor} ${typeof formatCurrency === 'function' ? formatCurrency(amt) : amt}. Please settle this balance.`;
+            
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'Split Balance', text });
+                } catch (err) {
+                    // Fallback to clipboard if sharing is aborted or unsupported
+                    navigator.clipboard.writeText(text).then(() => { if (typeof showToast === 'function') showToast('Copied to clipboard!', 'copy'); });
+                }
+            } else {
+                navigator.clipboard.writeText(text).then(() => { if (typeof showToast === 'function') showToast('Copied to clipboard!', 'copy'); });
+            }
         }
-        const adj1 = parseFloat(document.getElementById('adj1Amount')?.value) || 0;
-        const adj2 = parseFloat(document.getElementById('adj2Amount')?.value) || 0;
-        total += (document.getElementById('adj1Type')?.value === 'add' ? adj1 : -adj1);
-        total += (document.getElementById('adj2Type')?.value === 'add' ? adj2 : -adj2);
-        const formTotal = document.querySelector('#receiptForm .receipt-total-form');
-        if (formTotal) formTotal.innerHTML = `<strong>Total: ${formatCurrency(Math.max(0,total))}</strong>`;
+    });
+}
+
+// Extracted global receipt total function
+function updateReceiptTotal() {
+    const rent = parseFloat(document.getElementById('receiptRent')?.value) || 0;
+    let total = rent;
+    if (document.getElementById('includeWaterBill')?.checked) total += parseFloat(document.getElementById('waterBillAmount')?.value) || 0;
+    if (document.getElementById('includeMotorBill')?.checked) total += parseFloat(document.getElementById('motorBillAmount')?.value) || 0;
+    if (document.getElementById('includeElectricBill')?.checked) {
+        const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
+        const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
+        const units = Math.max(0, curr - prev);
+        const rate = state.electricRate || 8;
+        const elecAmt = units * rate;
+        const elecDisplay = document.getElementById('electricCalcResult');
+        if (elecDisplay) elecDisplay.textContent = `Units: ${units} | ${formatCurrency(elecAmt)}`;
+        total += elecAmt;
     }
-    window.updateReceiptTotal = updateReceiptTotal;
+    const adj1 = parseFloat(document.getElementById('adj1Amount')?.value) || 0;
+    const adj2 = parseFloat(document.getElementById('adj2Amount')?.value) || 0;
+    total += (document.getElementById('adj1Type')?.value === 'add' ? adj1 : -adj1);
+    total += (document.getElementById('adj2Type')?.value === 'add' ? adj2 : -adj2);
+    const formTotal = document.querySelector('#receiptForm .receipt-total-form');
+    if (formTotal) formTotal.innerHTML = `<strong>Total: ${formatCurrency(Math.max(0,total))}</strong>`;
+}
+window.updateReceiptTotal = updateReceiptTotal;
+
+function bindReceiptEvents() {
+    document.getElementById('receiptHouse')?.addEventListener('change', function() {
+        const house = state.houses.find(h => h.id === this.value);
+        if (house) {
+            document.getElementById('receiptRent').value = house.rent;
+            updateReceiptTotal();
+        }
+    });
+
+    document.getElementById('includeWaterBill')?.addEventListener('change', function() {
+        document.getElementById('waterBillAmount').style.display = this.checked ? 'block' : 'none';
+        updateReceiptTotal();
+    });
+    document.getElementById('includeMotorBill')?.addEventListener('change', function() {
+        document.getElementById('motorBillAmount').style.display = this.checked ? 'block' : 'none';
+        updateReceiptTotal();
+    });
+    document.getElementById('includeElectricBill')?.addEventListener('change', function() {
+        document.getElementById('electricInputs').style.display = this.checked ? 'block' : 'none';
+        updateReceiptTotal();
+    });
+    ['currentUnit', 'previousUnit', 'waterBillAmount', 'motorBillAmount', 'adj1Amount', 'adj2Amount', 'adj1Type', 'adj2Type'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', updateReceiptTotal);
+        document.getElementById(id)?.addEventListener('change', updateReceiptTotal);
+    });
+    // This is the single receipt form submit – generateReceipt() lives in receiptGenerator.js
+    document.getElementById('receiptForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        generateReceipt();
+    });
+}
+
+function bindEvents() {
+    bindNavigationEvents();
+    bindDashboardEvents();
+    bindTransactionEvents();
+    bindSettingsEvents();
+    bindAnalyticsEvents();
+    bindReceiptEvents();
 
     // Manual unlock button trigger
     document.getElementById('unlockBtn')?.addEventListener('click', triggerUnlock);
+}
+
+// ==================== PULL TO REFRESH ====================
+function setupPullToRefresh() {
+    const content = document.getElementById('appContent');
+    const indicator = document.getElementById('ptrIndicator');
+    const icon = indicator?.querySelector('i');
+    if (!content || !indicator) return;
+
+    let startY = 0;
+    let currentY = 0;
+    let isPulling = false;
+    let isRefreshing = false;
+    let activeScreen = null;
+
+    content.addEventListener('touchstart', (e) => {
+        activeScreen = document.querySelector('.screen.active');
+        // Only allow pull if the user is perfectly at the top of the screen
+        if (activeScreen && activeScreen.scrollTop <= 0) {
+            startY = e.touches[0].clientY;
+            isPulling = true;
+            indicator.style.transition = 'none';
+        }
+    }, { passive: true });
+
+    content.addEventListener('touchmove', (e) => {
+        if (!isPulling || isRefreshing || !activeScreen) return;
+        currentY = e.touches[0].clientY;
+        const pullDistance = currentY - startY;
+
+        if (pullDistance > 0 && activeScreen.scrollTop <= 0) {
+            const translate = Math.min(pullDistance * 0.4, 60); // Resistance factor
+            indicator.style.transform = `translateY(${translate}px)`;
+            if (icon) icon.style.transform = `rotate(${translate * 3}deg)`;
+        }
+    }, { passive: true });
+
+    content.addEventListener('touchend', () => {
+        if (!isPulling || isRefreshing) return;
+        isPulling = false;
+        indicator.style.transition = 'transform 0.3s ease';
+        const pullDistance = currentY - startY;
+
+        if (pullDistance > 100 && activeScreen && activeScreen.scrollTop <= 0) {
+            isRefreshing = true;
+            indicator.classList.add('refreshing');
+            indicator.style.transform = `translateY(55px)`;
+            if (icon) icon.style.transform = `rotate(0deg)`; // Reset for spin animation
+            
+            if (typeof pulseSyncDot === 'function') pulseSyncDot();
+            refreshAll();
+            
+            setTimeout(() => {
+                indicator.classList.remove('refreshing');
+                indicator.style.transform = `translateY(0)`;
+                isRefreshing = false;
+            }, 1000);
+        } else {
+            indicator.style.transform = `translateY(0)`;
+        }
+    });
 }
 
 // ==================== BIOMETRIC UNLOCK ====================
@@ -855,44 +1032,84 @@ async function triggerUnlock() {
 }
 
 // ==================== INIT ====================
-function init() {
-    // Simulate or Bind to Firebase Auth
-    if (window.firebase) {
-        firebase.auth().onAuthStateChanged((user) => {
-            const wasUser = !!state.currentUser;
-            if (user) {
-                const name = user.displayName || user.email.split('@')[0];
-                state.currentUser = { uid: user.uid, name: name, email: user.email };
-                // Role Checking
-                if (user.email.toLowerCase().includes('robert')) {
-                    state.userRole = 'admin';
-                } else {
-                    state.userRole = 'user'; // Esther, Gedion, Angela
-                }
-                if (typeof window.listenToFirebaseState === 'function') {
-                    window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
-                }
-                applyRoleRestrictions();
-            } else {
-                state.currentUser = null;
-                state.userRole = 'user';
-                if (wasUser) {
-                    // User signed out, reset the app state
-                    if (typeof window.detachFirebaseListeners === 'function') window.detachFirebaseListeners();
-                    resetState();
-                    refreshAll();
-                    navigateTo('screenDashboard');
-                }
-                applyRoleRestrictions();
+window.handleAuthStateChanged = (user) => {
+    const wasUser = !!state.currentUser;
+    if (user) {
+        const name = user.displayName || user.email.split('@')[0];
+        state.currentUser = { uid: user.uid, name: name, email: user.email };
+        
+        // Role Checking
+        const ADMIN_EMAILS = ['robert']; // Add exact admin email addresses here
+        const userEmail = user.email.toLowerCase();
+        if (ADMIN_EMAILS.some(admin => userEmail.includes(admin.toLowerCase()))) {
+            state.userRole = 'admin';
+        } else {
+            state.userRole = 'user'; // Esther, Gedion, Angela
+        }
+        
+        const syncUserLabel = document.getElementById('syncUserName');
+        if (syncUserLabel) {
+            syncUserLabel.textContent = name;
+        } else {
+            const btn = document.getElementById('headerSyncBtn');
+            if (btn) {
+                const span = document.createElement('span');
+                span.id = 'syncUserName';
+                span.style.fontSize = '0.85rem';
+                span.style.marginRight = '8px';
+                span.style.fontWeight = '600';
+                span.textContent = name;
+                btn.insertBefore(span, btn.firstChild);
             }
-        });
-    } else {
-        // Fallback testing state
-        state.currentUser = { name: "Robert", email: "robert@test.com" };
-        state.userRole = 'admin';
-        applyRoleRestrictions();
-    }
+        }
 
+        if (typeof window.listenToFirebaseState === 'function') {
+            window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
+        }
+        applyRoleRestrictions();
+
+        const loginModal = document.getElementById('firebaseLoginModal');
+        if (loginModal) loginModal.remove();
+
+        if (!window.appInitialized) {
+            window.appInitialized = true;
+            if (state.appLock && state.appLock.enabled) {
+                document.getElementById('splashScreen').style.display = 'none';
+                document.getElementById('lockScreen').style.display = 'flex';
+                triggerUnlock();
+            } else {
+                continueInit();
+            }
+        } else if (!wasUser) {
+            refreshAll();
+        }
+    } else {
+        state.currentUser = null;
+        state.userRole = 'user';
+        
+        const syncUserLabel = document.getElementById('syncUserName');
+        if (syncUserLabel) syncUserLabel.textContent = '';
+
+        if (wasUser) {
+            if (typeof window.detachFirebaseListeners === 'function') window.detachFirebaseListeners();
+            resetState();
+            refreshAll();
+            navigateTo('screenDashboard');
+        }
+        applyRoleRestrictions();
+        
+        if (!window.appInitialized) {
+            window.appInitialized = true;
+            continueInit();
+        }
+
+        if (typeof window.showLoginUI === 'function') {
+            window.showLoginUI(true);
+        }
+    }
+};
+
+function init() {
     if (typeof window.listenToConnectionStatus === 'function') {
         window.listenToConnectionStatus((isConnected) => {
             const dot = document.getElementById('syncStatusDot');
@@ -914,19 +1131,19 @@ function init() {
     if (!state.payers) state.payers = [...DEFAULT_PAYERS];
     applyTheme();
     bindEvents();
+    setupPullToRefresh();
 
-    if (state.appLock && state.appLock.enabled) {
-        document.getElementById('splashScreen').style.display = 'none';
-        document.getElementById('lockScreen').style.display = 'flex';
-        triggerUnlock();
-    } else {
-        continueInit();
-    }
+    // Fallback if firebase fails to load
+    setTimeout(() => {
+        if (!window.appInitialized && typeof window.showLoginUI !== 'function') {
+            console.warn("Firebase Auth timeout, proceeding offline");
+            window.appInitialized = true;
+            continueInit();
+        }
+    }, 3000);
 }
 
 function continueInit() {
-    refreshAddForm();
-    refreshReceiptForm();
     navigateTo('screenDashboard');
     document.getElementById('splashScreen')?.classList.add('hide');
     document.getElementById('appShell').style.display = 'flex';

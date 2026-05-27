@@ -1,4 +1,6 @@
 // ==================== js/transactions.js ====================
+let outsideTxClickHandler = null;
+
 function populateFilterCategories() {
     const filterType = document.getElementById('filterType')?.value || 'all';
     const filterCat = document.getElementById('filterCategory');
@@ -22,7 +24,7 @@ function populateFilterCategories() {
 
     const currentValue = filterCat.value;
     filterCat.innerHTML = '<option value="all">All Categories</option>' +
-        categories.map(c => `<option value="${c}">${c}</option>`).join('');
+        categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
 
     // Restore previous selection if still valid
     if (currentValue && categories.includes(currentValue)) {
@@ -60,14 +62,25 @@ function populateFilterSubcategories() {
     });
 
     const currentValue = filterSub.value;
-    filterSub.innerHTML = '<option value="all">All Subcats</option>' + ungrouped.map(s => `<option value="${s}">${s}</option>`).join('');
+    filterSub.innerHTML = '<option value="all">All Subcats</option>' + ungrouped.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
     for (let g in groups) {
-        filterSub.innerHTML += `<optgroup label="${g}">` + 
-            groups[g].map(s => `<option value="${s}">${s.split(':').slice(1).join(':').trim()}</option>`).join('') + `</optgroup>`;
+        filterSub.innerHTML += `<optgroup label="${escapeHTML(g)}">` + 
+            groups[g].map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s.split(':').slice(1).join(':').trim())}</option>`).join('') + `</optgroup>`;
     }
 
     if (currentValue && (subcategories.includes(currentValue) || currentValue === 'all')) {
         filterSub.value = currentValue;
+    }
+}
+
+function populateFilterPayers() {
+    const filterPayer = document.getElementById('filterPayer');
+    if (!filterPayer) return;
+    const currentValue = filterPayer.value;
+    filterPayer.innerHTML = '<option value="all">All Payers</option>' +
+        state.payers.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');
+    if (currentValue && (state.payers.includes(currentValue) || currentValue === 'all')) {
+        filterPayer.value = currentValue;
     }
 }
 
@@ -76,6 +89,7 @@ function getFilteredTransactions() {
     const fType = document.getElementById('filterType')?.value || 'all';
     const fCat = document.getElementById('filterCategory')?.value || 'all';
     const fSub = document.getElementById('filterSubcategory')?.value || 'all';
+    const fPayer = document.getElementById('filterPayer')?.value || 'all';
     const fSearch = (document.getElementById('filterSearch')?.value || '').toLowerCase();
     const fDateFrom = document.getElementById('filterDateFrom')?.value;
     const fDateTo = document.getElementById('filterDateTo')?.value;
@@ -86,6 +100,7 @@ function getFilteredTransactions() {
     if (fType !== 'all') txs = txs.filter(t => t.type === fType);
     if (fCat !== 'all') txs = txs.filter(t => (t.category || '').toLowerCase() === fCat.toLowerCase());
     if (fSub !== 'all') txs = txs.filter(t => (t.subcategory || '').toLowerCase() === fSub.toLowerCase());
+    if (fPayer !== 'all') txs = txs.filter(t => (t.payer || '').toLowerCase() === fPayer.toLowerCase());
     if (fSearch) txs = txs.filter(t => (t.category + ' ' + t.subcategory + ' ' + t.notes + ' ' + t.payer + ' ' + t.paymentMethod).toLowerCase().includes(fSearch));
     if (fDateFrom) txs = txs.filter(t => t.date >= fDateFrom);
     if (fDateTo) txs = txs.filter(t => t.date <= fDateTo);
@@ -106,6 +121,7 @@ function refreshTransactionList() {
     // Ensure filter categories are up‑to‑date
     populateFilterCategories();
     populateFilterSubcategories();
+    populateFilterPayers();
 
     const txs = getFilteredTransactions();
     const container = document.getElementById('transactionList');
@@ -129,7 +145,7 @@ function refreshTransactionList() {
                 ${catIcon ? `<span style="font-size:1.4rem;flex-shrink:0;text-align:center;width:24px;">${catIcon}</span>` : `<span style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0;margin:0 7px;"></span>`}
                 <div style="flex:1;" class="tx-info">
                     <div style="display:flex;justify-content:space-between;">
-                        <strong>${t.category || 'N/A'}</strong>
+                        <strong>${escapeHTML(t.category || 'N/A')}</strong>
                         ${(() => {
                             const isInc = t.type === 'income' || t.type === 'returned';
                             const isNeu = t.type === 'settlement';
@@ -145,16 +161,16 @@ function refreshTransactionList() {
                         const badgeColor = hasGroup ? getStringColor(group) : '';
                         const bgStyle = hasGroup ? `background:${hexToRgba(badgeColor, 0.15)};border:1px solid ${hexToRgba(badgeColor, 0.3)};color:${badgeColor};` : 'background:var(--bg-secondary);border:1px solid var(--divider);color:var(--text-secondary);';
                         return `<div style="margin:4px 0;">
-                            <span class="subcat-badge" data-cat="${t.category}" data-subcat="${t.subcategory}" style="${bgStyle}padding:2px 8px;border-radius:12px;font-size:0.7rem;display:inline-block;cursor:pointer;" title="Filter by ${t.subcategory}">
-                                ${hasGroup ? `<strong>${group}</strong>: ${name}` : name}
+                            <span class="subcat-badge" data-cat="${escapeHTML(t.category)}" data-subcat="${escapeHTML(t.subcategory)}" style="${bgStyle}padding:2px 8px;border-radius:12px;font-size:0.7rem;display:inline-block;cursor:pointer;" title="Filter by ${escapeHTML(t.subcategory)}">
+                                ${hasGroup ? `<strong>${escapeHTML(group)}</strong>: ${escapeHTML(name)}` : escapeHTML(name)}
                             </span>
                         </div>`;
                     })() : ''}
                     <small style="color:var(--text-secondary);">
-                        ${t.date} · ${t.type} ${t.payer ? `· <span style="color:${getStringColor(t.payer)};font-weight:500;">${t.payer}</span>${t.splitWith ? ` (Split with ${t.splitWith.join(', ')})` : ''}` : ''} ${t.paymentMethod ? '· ' + t.paymentMethod.toUpperCase() : ''}
+                        ${t.date} · ${t.type} ${t.payer ? `· <span style="color:${getStringColor(t.payer)};font-weight:500;">${escapeHTML(t.payer)}</span>${t.splitWith ? ` (Split with ${escapeHTML(Array.isArray(t.splitWith) ? t.splitWith.join(', ') : t.splitWith)})` : ''}` : ''} ${t.paymentMethod ? '· ' + escapeHTML(t.paymentMethod.toUpperCase()) : ''}
                     </small>
-                    ${t.notes ? `<div style="font-size:0.7rem;color:var(--text-tertiary);">${t.notes}</div>` : ''}
-                    ${t.receiptNo ? `<div style="font-size:0.65rem;color:var(--accent);">Receipt: ${t.receiptNo}</div>` : ''}
+                    ${t.notes ? `<div style="font-size:0.7rem;color:var(--text-tertiary);">${escapeHTML(t.notes)}</div>` : ''}
+                    ${t.receiptNo ? `<div style="font-size:0.65rem;color:var(--accent);">Receipt: ${escapeHTML(t.receiptNo)}</div>` : ''}
                 </div>
                 ${!state.bulkSelectMode ? `
                 <div class="tx-swipe-actions">
@@ -181,7 +197,7 @@ function refreshTransactionList() {
     const fAmtMin = document.getElementById('filterAmountMin')?.value || '';
     const fAmtMax = document.getElementById('filterAmountMax')?.value || '';
 
-    const hasActiveFilters = fType !== 'all' || fCat !== 'all' || fSub !== 'all' || fPayer !== 'all' || 
+    const hasActiveFilters = fType !== 'all' || fCat !== 'all' || fSub !== 'all' || fPayer !== 'all' ||
                              fSearch !== '' || fDateFrom !== '' || fDateTo !== '' || fAmtMin !== '' || fAmtMax !== '';
     const floatBtn = document.getElementById('floatingClearFiltersBtn');
     if (floatBtn) floatBtn.style.display = hasActiveFilters ? 'flex' : 'none';
@@ -292,19 +308,25 @@ function attachTransactionEvents(container) {
                 const { id, createdAt, updatedAt, ...copyData } = tx;
                 // Optionally set date to today
                 copyData.date = new Date().toISOString().slice(0, 10);
-                addTransaction(copyData);
-                showToast('Transaction copied!', 'copy');
+                const savedTx = addTransaction(copyData);
+                if (savedTx) {
+                    showToast('Transaction copied!', 'copy');
+                }
             }
         });
     });
 
     // Click outside swiped rows to close them
-    document.addEventListener('click', function handleOutsideClick(e) {
+    if (outsideTxClickHandler) {
+        document.removeEventListener('click', outsideTxClickHandler);
+    }
+    outsideTxClickHandler = function handleOutsideClick(e) {
         if (!e.target.closest('.tx-row')) {
             container.querySelectorAll('.tx-row.swiped').forEach(r => r.classList.remove('swiped'));
             currentSwipedRow = null;
         }
-    }, { once: false });
+    };
+    document.addEventListener('click', outsideTxClickHandler);
 }
 
 function updateBulkBar() {
@@ -323,6 +345,11 @@ function updateBulkBar() {
 function editTransactionUI(id) {
     const tx = getVisibleTransactions().find(t => t.id === id);
     if (tx) {
+        const form = document.getElementById('addTransactionForm');
+        if (form) form.dataset.editId = id;
+        
+        navigateTo('screenAdd');
+        
         document.getElementById('addType').value = tx.type;
         
         // Refresh options before setting category
@@ -337,15 +364,12 @@ function editTransactionUI(id) {
         document.getElementById('addDate').value = tx.date;
         document.getElementById('addNotes').value = tx.notes || '';
         
-        const payerEl = document.getElementById('addPayer');
-        if (payerEl) {
-            payerEl.value = tx.payer || '';
-            if (typeof updateSplitCheckboxes === 'function') updateSplitCheckboxes();
-            if (tx.splitWith) {
-                document.querySelectorAll('#addSplitCheckboxes input.split-cb').forEach(cb => {
-                    if (tx.splitWith.includes(cb.value)) cb.checked = true;
-                });
-            }
+        if (typeof updateSplitCheckboxes === 'function') updateSplitCheckboxes();
+        if (tx.splitWith) {
+            const splitArr = Array.isArray(tx.splitWith) ? tx.splitWith : [tx.splitWith];
+            document.querySelectorAll('#addSplitCheckboxes input.split-cb').forEach(cb => {
+                if (splitArr.includes(cb.value)) cb.checked = true;
+            });
         }
         
         const pmEl = document.getElementById('addPaymentMethod');
@@ -356,11 +380,6 @@ function editTransactionUI(id) {
             if (houseEl) houseEl.value = tx.houseId;
         }
         
-        const form = document.getElementById('addTransactionForm');
-        if (form) form.dataset.editId = id;
-        
-        navigateTo('screenAdd');
-        refreshAddForm();
         showToast('Editing transaction...', 'edit');
     }
 }

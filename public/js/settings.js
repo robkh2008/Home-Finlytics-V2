@@ -11,8 +11,14 @@ function refreshSettings() {
     const currencySelect = document.getElementById('currencySelect');
     if (currencySelect) currencySelect.value = state.currency;
 
+    const elecRateInput = document.getElementById('settingsElectricRate');
+    if (elecRateInput) elecRateInput.value = state.electricRate || 8;
+    document.querySelectorAll('.currency-symbol').forEach(el => el.textContent = state.currency || '₹');
+
     const appLockTrack = document.getElementById('appLockToggleTrack');
     if (appLockTrack) appLockTrack.classList.toggle('active', !!state.appLock?.enabled);
+    const appLockWrap = document.getElementById('appLockToggleWrap');
+    if (appLockWrap) appLockWrap.setAttribute('aria-checked', !!state.appLock?.enabled ? 'true' : 'false');
 
     // --- Budget settings list ---
     populateBudgetCategories();
@@ -21,15 +27,16 @@ function refreshSettings() {
     if (budgetList) {
         budgetList.innerHTML = Object.entries(state.budgets).map(([cat, limit]) => `
             <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
-                <span>${cat}</span><span>${formatCurrency(limit)}</span>
-                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-budget-btn" data-cat="${cat}"><i class="fas fa-times"></i></button>` : ''}
+                <span>${escapeHTML(cat)}</span><span>${formatCurrency(limit)}</span>
+                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-budget-btn" data-cat="${escapeHTML(cat)}"><i class="fas fa-times"></i></button>` : ''}
             </div>`).join('') || '<p style="color:var(--text-tertiary);">No budgets set</p>';
     }
 
     // --- Categories & Subcategories ---
-    refreshSettingsCatList();
-    populateSettingsCategorySelect();
-    refreshSubcategoryList();
+    const currentType = document.getElementById('settingsCatType')?.value || 'expense';
+    refreshSettingsCatList(currentType);
+    populateSettingsCategorySelect(currentType);
+    refreshSubcategoryList(currentType);
 
     // --- Payer Management ---
     renderPayerList();
@@ -39,38 +46,38 @@ function refreshSettings() {
     if (houseList) {
         houseList.innerHTML = state.houses.map(h => `
             <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
-                <span>H${h.houseNo} · ${h.address} · Tenant: ${h.tenant} · Owner: ${h.owner} · Rent: ${formatCurrency(h.rent)}</span>
-                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-house-btn" data-id="${h.id}"><i class="fas fa-times"></i></button>` : ''}
+                <span>H${escapeHTML(h.houseNo)} · ${escapeHTML(h.address)} · Tenant: ${escapeHTML(h.tenant)} · Owner: ${escapeHTML(h.owner)} · Rent: ${formatCurrency(h.rent)}</span>
+                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-house-btn" data-id="${escapeHTML(h.id)}"><i class="fas fa-times"></i></button>` : ''}
             </div>`).join('');
     }
 }
 
 // --- Helper functions (unchanged, but with null checks already present) ---
-function refreshSettingsCatList() {
-    const type = document.getElementById('settingsCatType')?.value || 'expense';
+function refreshSettingsCatList(cachedType = null) {
+    const type = (typeof cachedType === 'string' ? cachedType : null) || document.getElementById('settingsCatType')?.value || 'expense';
     const list = document.getElementById('settingsCatList');
     const isAdmin = state.userRole === 'admin';
     if (!list) return;
     const cats = state.categories[type] || [];
     list.innerHTML = cats.map(c => `
         <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--divider);">
-            <span style="font-size:1.2rem;width:24px;text-align:center;">${c.icon || ''}</span>
-            <span style="width:14px;height:14px;border-radius:50%;background:${c.color};flex-shrink:0;"></span>
-            <span style="flex:1;">${c.name}</span>
-            ${isAdmin ? `<button class="btn btn-xs btn-danger remove-cat-btn" data-type="${type}" data-name="${c.name}"><i class="fas fa-times"></i></button>` : ''}
+            <span style="font-size:1.2rem;width:24px;text-align:center;">${escapeHTML(c.icon || '')}</span>
+            <span style="width:14px;height:14px;border-radius:50%;background:${escapeHTML(c.color)};flex-shrink:0;"></span>
+            <span style="flex:1;">${escapeHTML(c.name)}</span>
+            ${isAdmin ? `<button class="btn btn-xs btn-danger remove-cat-btn" data-type="${escapeHTML(type)}" data-name="${escapeHTML(c.name)}"><i class="fas fa-times"></i></button>` : ''}
         </div>`).join('') || '<p style="color:var(--text-tertiary);">No categories</p>';
 }
 
-function populateSettingsCategorySelect() {
-    const type = document.getElementById('settingsCatType')?.value || 'expense';
+function populateSettingsCategorySelect(cachedType = null) {
+    const type = (typeof cachedType === 'string' ? cachedType : null) || document.getElementById('settingsCatType')?.value || 'expense';
     const select = document.getElementById('settingsCategorySelect');
     if (!select) return;
     const cats = state.categories[type] || [];
-    select.innerHTML = '<option value="">-- Choose Category --</option>' + cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    select.innerHTML = '<option value="">-- Choose Category --</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
 }
 
-function refreshSubcategoryList() {
-    const type = document.getElementById('settingsCatType')?.value || 'expense';
+function refreshSubcategoryList(cachedType = null) {
+    const type = (typeof cachedType === 'string' ? cachedType : null) || document.getElementById('settingsCatType')?.value || 'expense';
     const catName = document.getElementById('settingsCategorySelect')?.value;
     const container = document.getElementById('subcatList');
     const isAdmin = state.userRole === 'admin';
@@ -85,18 +92,19 @@ function refreshSubcategoryList() {
     const subs = cat.subcategories || [];
     container.innerHTML = subs.map(sub => `
         <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--divider);">
-            <span>${sub}</span>
-            ${isAdmin ? `<button class="btn btn-xs btn-danger remove-subcat-btn" data-cat="${catName}" data-sub="${sub}"><i class="fas fa-times"></i></button>` : ''}
+            <span>${escapeHTML(sub)}</span>
+            ${isAdmin ? `<button class="btn btn-xs btn-danger remove-subcat-btn" data-cat="${escapeHTML(catName)}" data-sub="${escapeHTML(sub)}"><i class="fas fa-times"></i></button>` : ''}
         </div>`).join('') || '<p style="color:var(--text-tertiary);">No subcategories.</p>';
 }
 
 function renderPayerList() {
     const container = document.getElementById('payerList');
+    const isAdmin = state.userRole === 'admin';
     if (!container) return;
     container.innerHTML = state.payers.map((p, index) => `
         <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
-            <span>${p}</span>
-            <button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>
+            <span>${escapeHTML(p)}</span>
+            ${isAdmin ? `<button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>` : ''}
         </div>`).join('') || '<p style="color:var(--text-tertiary);">No payers added.</p>';
 }
 
@@ -107,7 +115,8 @@ function populateBudgetCategories() {
     const combined = [
         ...(state.categories.expense || []).map(c => c.name),
         ...(state.categories.groceries || []).map(c => c.name),
+        ...(state.categories.income || []).map(c => c.name),
     ];
     const unique = [...new Set(combined)].sort();
-    select.innerHTML = unique.map(c => `<option value="${c}">${c}</option>`).join('');
+    select.innerHTML = unique.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
 }
