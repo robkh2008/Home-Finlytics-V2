@@ -116,6 +116,10 @@
             <!-- Dashboard Screen -->
             <section id="screenDashboard" class="screen active">
                 <div class="screen-scroll">
+                    <div id="dashboardSyncBadge" style="display:none; background:var(--warning); color:#ffffff; padding:8px 12px; border-radius:var(--radius-md); font-size:0.85rem; font-weight:600; align-items:center; justify-content:space-between; margin-bottom:4px; box-shadow:0 2px 8px rgba(255,149,0,0.3); animation: fadeSlideIn 0.3s ease-out;">
+                        <span style="display:flex; align-items:center; gap:8px;"><i class="fas fa-cloud-upload-alt"></i> Pending sync...</span>
+                        <button id="retrySyncBtn" style="background:rgba(0,0,0,0.15); color:#fff; border:none; padding:4px 10px; border-radius:6px; font-weight:600; font-size:0.75rem; cursor:pointer; transition:background 0.2s;"><i class="fas fa-sync-alt"></i> Retry</button>
+                    </div>
                     <div class="summary-row" id="dashboardSummaryRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
                     <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Expenses by Category</h3><div class="chart-wrap"><canvas id="dashPieChart" role="img" aria-label="Expenses by Category Doughnut Chart"></canvas></div></div>
                     <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-bar"></i> 6-Month Trend</h3><div class="chart-wrap"><canvas id="dashTrendChart" role="img" aria-label="Expense Trend Bar Chart"></canvas></div></div>
@@ -278,6 +282,16 @@
                                     <div class="toggle-switch-thumb"></div>
                                 </div>
                             </div>
+                        </div>
+                        <div id="settingsSignOutWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
+                            <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Logged in to Cloud Sync as <strong id="settingsUserEmail" style="color:var(--text-primary);"></strong>.</p>
+                            <button id="settingsResetPwdBtn" class="btn btn-secondary btn-full" style="margin-bottom:8px;"><i class="fas fa-key"></i> Reset Password</button>
+                            <button id="settingsSignOutBtn" class="btn btn-danger btn-full"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+                            <button id="settingsDeleteAccountBtn" class="btn btn-danger btn-full admin-only" style="margin-top:8px;"><i class="fas fa-user-times"></i> Delete Account</button>
+                        </div>
+                        <div id="settingsSignInWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
+                            <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Sign in to securely sync your data across devices.</p>
+                            <button id="settingsSignInBtn" class="btn btn-primary btn-full"><i class="fas fa-sign-in-alt"></i> Sign In to Cloud Sync</button>
                         </div>
                     </div>
                     <!-- Currency -->

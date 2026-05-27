@@ -3,7 +3,7 @@
 // 1. Import Firebase functions from the npm package
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 // 2. Paste YOUR config object here
 const firebaseConfig = {
@@ -20,15 +20,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 
-let unsubscribeStateListener = null;
+let unsubscribeNodes = [];
 let unsubscribePublicTxs = null;
 let unsubscribePrivateTxs = null;
 let unsubscribeConnectionListener = null;
 
 // 6. Production Sync Functions
 export function saveStateToFirebase(appState) {
-    if (!auth.currentUser) return; // Prevent writing if not authenticated
+    if (!auth.currentUser) return Promise.resolve(); // Prevent writing if not authenticated
 
     const updates = {};
     
@@ -77,12 +78,17 @@ export function saveStateToFirebase(appState) {
         updates['/appState/budgets'] = appState.budgets || {};
         updates['/appState/recurringTemplates'] = appState.recurringTemplates || [];
         updates['/appState/payers'] = appState.payers || [];
+        updates['/appState/currency'] = appState.currency || '₹';
+        updates['/appState/electricRate'] = appState.electricRate || 8;
         updates['/appState/transactions'] = null; // WIPE LEGACY DATA
     }
     
     updates['/appState/lastUpdated'] = appState.lastUpdated || Date.now();
 
-    update(ref(database), updates).catch((error) => console.error("Firebase save error: ", error.message));
+    return update(ref(database), updates).catch((error) => {
+        console.error("Firebase save error: ", error.message);
+        throw error;
+    });
 }
 
 export function listenToFirebaseState(onDataReceived, userRole) {
@@ -112,16 +118,15 @@ export function listenToFirebaseState(onDataReceived, userRole) {
         onDataReceived(fullState);
     };
 
-    // Listener for non-transactional data
-    const otherStateRef = ref(database, 'appState');
-    unsubscribeStateListener = onValue(otherStateRef, (snapshot) => {
-        const data = snapshot.val() || {};
-        // Exclude transaction nodes from this listener's data
-        delete data.transactions_public;
-        delete data.transactions_private;
-        delete data.transactions; // Prevent legacy data from bleeding in
-        otherState = data;
-        mergeAndCallback();
+    // Listen to individual nodes instead of root 'appState' to avoid PERMISSION_DENIED for non-admins
+    const settingsNodes = ['houses', 'categories', 'budgets', 'recurringTemplates', 'payers', 'currency', 'electricRate', 'lastUpdated'];
+    settingsNodes.forEach(node => {
+        const nodeRef = ref(database, `appState/${node}`);
+        const unsub = onValue(nodeRef, (snapshot) => {
+            otherState[node] = snapshot.val() || null;
+            mergeAndCallback();
+        });
+        unsubscribeNodes.push(unsub);
     });
 
     // Listener for public transactions (all users)
@@ -144,10 +149,10 @@ export function listenToFirebaseState(onDataReceived, userRole) {
 }
 
 export function detachFirebaseListeners() {
-    if (unsubscribeStateListener) unsubscribeStateListener();
+    unsubscribeNodes.forEach(unsub => unsub());
+    unsubscribeNodes = [];
     if (unsubscribePublicTxs) unsubscribePublicTxs();
     if (unsubscribePrivateTxs) unsubscribePrivateTxs();
-    unsubscribeStateListener = null;
     unsubscribePublicTxs = null;
     unsubscribePrivateTxs = null;
 }
@@ -200,6 +205,12 @@ window.showLoginUI = (isMandatory = false) => {
                 ${!isMandatory ? '<button id="fbLoginCancel" class="btn btn-secondary" style="flex:1;">Cancel</button>' : ''}
                 <button id="fbLoginBtn" class="btn btn-primary" style="flex:1;">Log In</button>
             </div>
+            <div style="margin: 16px 0; display: flex; align-items: center; text-align: center; color: var(--text-tertiary);">
+                <div style="flex: 1; border-top: 1px solid var(--divider);"></div>
+                <span style="padding: 0 10px; font-size: 0.8rem;">OR</span>
+                <div style="flex: 1; border-top: 1px solid var(--divider);"></div>
+            </div>
+            <button id="fbGoogleLoginBtn" class="btn btn-secondary btn-full" style="background: #ffffff; color: #757575; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 500;"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style="width: 18px; height: 18px;"> Sign in with Google</button>
             <p id="fbLoginError" style="color:var(--danger);font-size:0.8rem;margin-top:12px;display:none;"></p>
         </div>
     `;
@@ -249,7 +260,8 @@ window.showLoginUI = (isMandatory = false) => {
         }
     });
 
-    document.getElementById('fbLoginBtn').addEventListener('click', () => {
+    document.getElementById('fbLoginBtn').addEventListener('click', (e) => {
+        const btn = e.currentTarget;
         const email = document.getElementById('fbLoginEmail').value;
         const pwd = document.getElementById('fbLoginPwd').value;
         const errEl = document.getElementById('fbLoginError');
@@ -261,14 +273,22 @@ window.showLoginUI = (isMandatory = false) => {
             return;
         }
 
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${isSignUpMode ? 'Signing Up...' : 'Logging In...'}`;
+        btn.disabled = true;
+
         if (isSignUpMode) {
             const confirmPwdVal = document.getElementById('fbLoginConfirmPwd').value;
             if (pwd !== confirmPwdVal) {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
                 errEl.textContent = 'Passwords do not match.';
                 errEl.style.display = 'block';
                 return;
             }
             if (pwd.length < 6) {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
                 errEl.textContent = 'Password must be at least 6 characters long.';
                 errEl.style.display = 'block';
                 return;
@@ -279,6 +299,8 @@ window.showLoginUI = (isMandatory = false) => {
                     if (typeof showToast === 'function') showToast('Account created and logged in!', 'user-plus');
                 })
                 .catch(err => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
                     errEl.textContent = err.message;
                     errEl.style.display = 'block';
                 });
@@ -289,6 +311,8 @@ window.showLoginUI = (isMandatory = false) => {
                     if (typeof showToast === 'function') showToast('Logged in to Firebase!', 'cloud');
                 })
                 .catch(err => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
                     errEl.textContent = err.message;
                     errEl.style.display = 'block';
                 });
@@ -317,6 +341,28 @@ window.showLoginUI = (isMandatory = false) => {
             });
     });
 
+    document.getElementById('fbGoogleLoginBtn').addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        const errEl = document.getElementById('fbLoginError');
+        errEl.style.display = 'none';
+        
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
+        btn.disabled = true;
+
+        signInWithPopup(auth, googleProvider)
+            .then(() => {
+                modal.remove();
+                if (typeof showToast === 'function') showToast('Logged in with Google!', 'cloud');
+            })
+            .catch(err => {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                errEl.textContent = err.message;
+                errEl.style.display = 'block';
+            });
+    });
+
     if (!isMandatory) {
         document.getElementById('fbLoginCancel').addEventListener('click', () => modal.remove());
     }
@@ -331,21 +377,75 @@ onAuthStateChanged(auth, (user) => {
 // 9. Make the sync button clickable to show the login UI or sign out
 function setupAuthButton() {
     const syncBtn = document.getElementById('headerSyncBtn');
-    const syncDot = document.getElementById('syncStatusDot');
+    const settingsSignOutBtn = document.getElementById('settingsSignOutBtn');
+    const settingsResetPwdBtn = document.getElementById('settingsResetPwdBtn');
+    const settingsDeleteAccountBtn = document.getElementById('settingsDeleteAccountBtn');
+
+    const handleSignOut = () => {
+        if (confirm("You are logged into Firebase. Do you want to sign out? Your local data will be cleared for privacy.")) {
+            auth.signOut().then(() => {
+                localStorage.removeItem('home_finlytics_state');
+                if (typeof showToast === 'function') showToast('Signed out. Data cleared for privacy.', 'info-circle');
+            });
+        }
+    };
+
     if (syncBtn) {
         syncBtn.addEventListener('click', () => {
             if (!auth.currentUser) {
                 window.showLoginUI();
             } else {
-                if (confirm("You are logged into Firebase. Do you want to sign out? Your local data will be cleared for privacy.")) {
-                    auth.signOut().then(() => {
-                        // Securely wipe the logged-in user's data from local storage
+                // If there are unsynced changes, make the cloud icon act as a global "Retry Sync" button
+                const badge = document.getElementById('dashboardSyncBadge');
+                if (badge && badge.style.display !== 'none') {
+                    if (typeof window.triggerManualSync === 'function') {
+                        window.triggerManualSync();
+                        return;
+                    }
+                }
+                handleSignOut();
+            }
+        });
+    }
+
+    if (settingsSignOutBtn) {
+        settingsSignOutBtn.addEventListener('click', handleSignOut);
+    }
+
+    if (settingsResetPwdBtn) {
+        settingsResetPwdBtn.addEventListener('click', () => {
+            if (auth.currentUser && auth.currentUser.email) {
+                if (confirm(`Send a password reset email to ${auth.currentUser.email}?`)) {
+                    sendPasswordResetEmail(auth, auth.currentUser.email)
+                        .then(() => {
+                            if (typeof showToast === 'function') showToast('Password reset email sent!', 'envelope');
+                        })
+                        .catch(err => {
+                            if (typeof showToast === 'function') showToast(err.message, 'times-circle');
+                        });
+                }
+            }
+        });
+    }
+
+    if (settingsDeleteAccountBtn) {
+        settingsDeleteAccountBtn.addEventListener('click', () => {
+            if (auth.currentUser && auth.currentUser.email) {
+                const isAdmin = auth.currentUser.email.toLowerCase().includes('robert');
+                if (!isAdmin) {
+                    if (typeof showToast === 'function') showToast('Only admins can delete accounts.', 'exclamation-triangle');
+                    return;
+                }
+                if (confirm("DANGER: Are you sure you want to permanently delete your Firebase account? This cannot be undone.")) {
+                    deleteUser(auth.currentUser).then(() => {
                         localStorage.removeItem('home_finlytics_state');
-                        
-                        if (typeof showToast === 'function') showToast('Signed out. Data cleared for privacy.', 'info-circle');
-                        
-                        // The onAuthStateChanged handler in app.js will now take care of
-                        // detaching listeners and resetting state.
+                        if (typeof showToast === 'function') showToast('Account deleted successfully.', 'check-circle');
+                    }).catch(err => {
+                        if (err.code === 'auth/requires-recent-login') {
+                            if (typeof showToast === 'function') showToast('Please sign out and log back in to verify your identity before deleting your account.', 'times-circle');
+                        } else {
+                            if (typeof showToast === 'function') showToast(err.message, 'times-circle');
+                        }
                     });
                 }
             }

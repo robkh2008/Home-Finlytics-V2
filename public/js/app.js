@@ -16,6 +16,7 @@ let state = {
     selectedTxIds: new Set(),
     activeScreen: 'screenDashboard',
     lastUpdated: 0,
+    hasUnsyncedChanges: false,
     appLock: { enabled: false, credentialId: null },
     currentUser: null,
     userRole: 'user' // 'admin' or 'user'
@@ -44,18 +45,39 @@ function resetState() {
     state.selectedTxIds = new Set();
     state.bulkSelectMode = false;
     state.lastUpdated = Date.now(); // We use Date.now() here to explicitly sync the wipe action to other devices
+    state.hasUnsyncedChanges = false;
 }
 
 // Firebase Sync override (Replacing storage.js local storage logic)
 function saveState() {
     state.lastUpdated = Date.now();
-    if (typeof window.saveStateToFirebase === 'function') {
-        window.saveStateToFirebase(state);
-        if (typeof pulseSyncDot === 'function') pulseSyncDot();
+    state.hasUnsyncedChanges = true;
+    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+    
+    // Backup to local storage in case Firebase fails or app is offline
+    try {
+        localStorage.setItem('home_finlytics_state', JSON.stringify(state));
+    } catch (e) { console.warn('Local storage disabled'); }
+
+    if (typeof window.saveStateToFirebase === 'function' && navigator.onLine) {
+        const syncPromise = window.saveStateToFirebase(state);
+        if (syncPromise && syncPromise.then) {
+            syncPromise.then(() => {
+                state.hasUnsyncedChanges = false;
+                if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+                try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+                if (typeof pulseSyncDot === 'function') pulseSyncDot();
+            }).catch(() => { /* Remains unsynced */ });
+        }
     }
 }
 
-function loadState() {}
+function loadState() {
+    try {
+        const saved = localStorage.getItem('home_finlytics_state');
+        if (saved) Object.assign(state, JSON.parse(saved));
+    } catch (e) { console.warn('Local storage disabled'); }
+}
 
 function onFirebaseDataReceived(firebaseData) {
     const localUpdated = state.lastUpdated || 0;
@@ -64,12 +86,25 @@ function onFirebaseDataReceived(firebaseData) {
     // If local data is newer, it means we made changes offline that will be
     // pushed up shortly by `saveState()`, so we ignore the cloud data.
     if (localUpdated > cloudUpdated) {
+        // Ensure our newer local offline data is pushed up to the cloud
+        if (typeof window.saveStateToFirebase === 'function' && state.currentUser) {
+            const syncPromise = window.saveStateToFirebase(state);
+            if (syncPromise && syncPromise.then) {
+                syncPromise.then(() => {
+                    state.hasUnsyncedChanges = false;
+                    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+                    try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+                }).catch(()=>{});
+            }
+        }
         return;
     }
 
     // Cloud is newer, overwrite local state.
     Object.assign(state, firebaseData);
     state.lastUpdated = cloudUpdated;
+    state.hasUnsyncedChanges = false;
+    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
 
     // Apply structural migrations for Groceries and House Rent
     if (state.categories && state.categories.expense && typeof DEFAULT_CATEGORIES !== 'undefined') {
@@ -120,6 +155,43 @@ function onFirebaseDataReceived(firebaseData) {
     if (typeof refreshAll === 'function') refreshAll();
 }
 window.onFirebaseDataReceived = onFirebaseDataReceived;
+
+window.updateDashboardSyncBadge = function() {
+    const badge = document.getElementById('dashboardSyncBadge');
+    if (badge) {
+        badge.style.display = state.hasUnsyncedChanges ? 'flex' : 'none';
+    }
+};
+
+window.triggerManualSync = function() {
+    if (!navigator.onLine) {
+        if (typeof showToast === 'function') showToast('You are currently offline.', 'wifi');
+        return;
+    }
+    if (!state.currentUser) {
+        if (typeof window.showLoginUI === 'function') window.showLoginUI();
+        return;
+    }
+    const icon = document.querySelector('#retrySyncBtn i');
+    if (icon) icon.classList.add('fa-spin');
+    
+    if (typeof window.saveStateToFirebase === 'function') {
+        const syncPromise = window.saveStateToFirebase(state);
+        if (syncPromise && syncPromise.then) {
+            syncPromise.then(() => {
+                state.hasUnsyncedChanges = false;
+                if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+                try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+                if (typeof pulseSyncDot === 'function') pulseSyncDot();
+                if (typeof showToast === 'function') showToast('Sync successful!', 'check-circle');
+            }).catch(() => {
+                if (typeof showToast === 'function') showToast('Sync failed. Will retry later.', 'times-circle');
+            }).finally(() => {
+                if (icon) icon.classList.remove('fa-spin');
+            });
+        }
+    }
+};
 
 function applyTheme() {
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -219,6 +291,11 @@ function bindDashboardEvents() {
                 navigator.clipboard.writeText(text).then(() => { if (typeof showToast === 'function') showToast('Copied to clipboard!', 'copy'); });
             }
         }
+    });
+
+    document.getElementById('retrySyncBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof window.triggerManualSync === 'function') window.triggerManualSync();
     });
 }
 
@@ -1039,9 +1116,11 @@ window.handleAuthStateChanged = (user) => {
         state.currentUser = { uid: user.uid, name: name, email: user.email };
         
         // Role Checking
-        const ADMIN_EMAILS = ['robert']; // Add exact admin email addresses here
-        const userEmail = user.email.toLowerCase();
-        if (ADMIN_EMAILS.some(admin => userEmail.includes(admin.toLowerCase()))) {
+        const ADMIN_UIDS = ['PASTE_YOUR_UID_HERE']; // e.g., 'aB3x9Yk...'
+        const ADMIN_EMAILS = ['robert@homefinlytics.com', 'your.google.email@gmail.com']; // Exact matches only
+        const userEmail = user.email ? user.email.toLowerCase() : '';
+        
+        if (ADMIN_UIDS.includes(user.uid) || ADMIN_EMAILS.includes(userEmail)) {
             state.userRole = 'admin';
         } else {
             state.userRole = 'user'; // Esther, Gedion, Angela
@@ -1062,6 +1141,14 @@ window.handleAuthStateChanged = (user) => {
                 btn.insertBefore(span, btn.firstChild);
             }
         }
+        
+        const signOutWrap = document.getElementById('settingsSignOutWrap');
+        if (signOutWrap) signOutWrap.style.display = 'block';
+        const settingsUserEmail = document.getElementById('settingsUserEmail');
+        if (settingsUserEmail) settingsUserEmail.textContent = user.email;
+        
+        const signInWrap = document.getElementById('settingsSignInWrap');
+        if (signInWrap) signInWrap.style.display = 'none';
 
         if (typeof window.listenToFirebaseState === 'function') {
             window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
@@ -1090,6 +1177,12 @@ window.handleAuthStateChanged = (user) => {
         const syncUserLabel = document.getElementById('syncUserName');
         if (syncUserLabel) syncUserLabel.textContent = '';
 
+        const signOutWrap = document.getElementById('settingsSignOutWrap');
+        if (signOutWrap) signOutWrap.style.display = 'none';
+
+        const signInWrap = document.getElementById('settingsSignInWrap');
+        if (signInWrap) signInWrap.style.display = 'block';
+
         if (wasUser) {
             if (typeof window.detachFirebaseListeners === 'function') window.detachFirebaseListeners();
             resetState();
@@ -1110,6 +1203,9 @@ window.handleAuthStateChanged = (user) => {
 };
 
 function init() {
+    loadState();
+    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+
     if (typeof window.listenToConnectionStatus === 'function') {
         window.listenToConnectionStatus((isConnected) => {
             const dot = document.getElementById('syncStatusDot');
@@ -1191,4 +1287,25 @@ document.addEventListener('DOMContentLoaded', () => {
             installBtn.classList.replace('btn-primary', 'btn-secondary');
         }
     }
+});
+
+// ==================== NETWORK STATUS NOTIFICATIONS ====================
+window.addEventListener('online', () => {
+    if (typeof showToast === 'function') showToast('Internet connection restored! Syncing...', 'wifi');
+    // Automatically push any local changes made while offline
+    if (state.currentUser && typeof window.saveStateToFirebase === 'function' && state.hasUnsyncedChanges) {
+        const syncPromise = window.saveStateToFirebase(state);
+        if (syncPromise && syncPromise.then) {
+            syncPromise.then(() => {
+                state.hasUnsyncedChanges = false;
+                if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+                try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+                if (typeof pulseSyncDot === 'function') pulseSyncDot();
+            }).catch(()=>{});
+        }
+    }
+});
+
+window.addEventListener('offline', () => {
+    if (typeof showToast === 'function') showToast('Internet connection lost. Working offline.', 'exclamation-triangle');
 });
