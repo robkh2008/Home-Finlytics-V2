@@ -3,7 +3,8 @@
 // 1. Import Firebase functions from the npm package
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
 
 // 2. Paste YOUR config object here
 const firebaseConfig = {
@@ -20,7 +21,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
 
 let unsubscribeNodes = [];
 let unsubscribePublicTxs = null;
@@ -205,12 +205,6 @@ window.showLoginUI = (isMandatory = false) => {
                 ${!isMandatory ? '<button id="fbLoginCancel" class="btn btn-secondary" style="flex:1;">Cancel</button>' : ''}
                 <button id="fbLoginBtn" class="btn btn-primary" style="flex:1;">Log In</button>
             </div>
-            <div style="margin: 16px 0; display: flex; align-items: center; text-align: center; color: var(--text-tertiary);">
-                <div style="flex: 1; border-top: 1px solid var(--divider);"></div>
-                <span style="padding: 0 10px; font-size: 0.8rem;">OR</span>
-                <div style="flex: 1; border-top: 1px solid var(--divider);"></div>
-            </div>
-            <button id="fbGoogleLoginBtn" class="btn btn-secondary btn-full" style="background: #ffffff; color: #757575; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 500;"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" style="width: 18px; height: 18px;"> Sign in with Google</button>
             <p id="fbLoginError" style="color:var(--danger);font-size:0.8rem;margin-top:12px;display:none;"></p>
         </div>
     `;
@@ -260,8 +254,7 @@ window.showLoginUI = (isMandatory = false) => {
         }
     });
 
-    document.getElementById('fbLoginBtn').addEventListener('click', (e) => {
-        const btn = e.currentTarget;
+    document.getElementById('fbLoginBtn').addEventListener('click', () => {
         const email = document.getElementById('fbLoginEmail').value;
         const pwd = document.getElementById('fbLoginPwd').value;
         const errEl = document.getElementById('fbLoginError');
@@ -273,22 +266,14 @@ window.showLoginUI = (isMandatory = false) => {
             return;
         }
 
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${isSignUpMode ? 'Signing Up...' : 'Logging In...'}`;
-        btn.disabled = true;
-
         if (isSignUpMode) {
             const confirmPwdVal = document.getElementById('fbLoginConfirmPwd').value;
             if (pwd !== confirmPwdVal) {
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
                 errEl.textContent = 'Passwords do not match.';
                 errEl.style.display = 'block';
                 return;
             }
             if (pwd.length < 6) {
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
                 errEl.textContent = 'Password must be at least 6 characters long.';
                 errEl.style.display = 'block';
                 return;
@@ -299,8 +284,6 @@ window.showLoginUI = (isMandatory = false) => {
                     if (typeof showToast === 'function') showToast('Account created and logged in!', 'user-plus');
                 })
                 .catch(err => {
-                    btn.innerHTML = originalHtml;
-                    btn.disabled = false;
                     errEl.textContent = err.message;
                     errEl.style.display = 'block';
                 });
@@ -311,8 +294,6 @@ window.showLoginUI = (isMandatory = false) => {
                     if (typeof showToast === 'function') showToast('Logged in to Firebase!', 'cloud');
                 })
                 .catch(err => {
-                    btn.innerHTML = originalHtml;
-                    btn.disabled = false;
                     errEl.textContent = err.message;
                     errEl.style.display = 'block';
                 });
@@ -341,28 +322,6 @@ window.showLoginUI = (isMandatory = false) => {
             });
     });
 
-    document.getElementById('fbGoogleLoginBtn').addEventListener('click', (e) => {
-        const btn = e.currentTarget;
-        const errEl = document.getElementById('fbLoginError');
-        errEl.style.display = 'none';
-        
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
-        btn.disabled = true;
-
-        signInWithPopup(auth, googleProvider)
-            .then(() => {
-                modal.remove();
-                if (typeof showToast === 'function') showToast('Logged in with Google!', 'cloud');
-            })
-            .catch(err => {
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
-                errEl.textContent = err.message;
-                errEl.style.display = 'block';
-            });
-    });
-
     if (!isMandatory) {
         document.getElementById('fbLoginCancel').addEventListener('click', () => modal.remove());
     }
@@ -380,6 +339,7 @@ function setupAuthButton() {
     const settingsSignOutBtn = document.getElementById('settingsSignOutBtn');
     const settingsResetPwdBtn = document.getElementById('settingsResetPwdBtn');
     const settingsDeleteAccountBtn = document.getElementById('settingsDeleteAccountBtn');
+    const settingsSignInBtn = document.getElementById('settingsSignInBtn');
 
     const handleSignOut = () => {
         if (confirm("You are logged into Firebase. Do you want to sign out? Your local data will be cleared for privacy.")) {
@@ -430,8 +390,12 @@ function setupAuthButton() {
 
     if (settingsDeleteAccountBtn) {
         settingsDeleteAccountBtn.addEventListener('click', () => {
-            if (auth.currentUser && auth.currentUser.email) {
-                const isAdmin = auth.currentUser.email.toLowerCase().includes('robert');
+            if (auth.currentUser) {
+                const ADMIN_UIDS = ['m0lCGFazrlf8OMlUr1KD61JclVV2', 'PASTE_NEW_UID_HERE'];
+                const ADMIN_EMAILS = ['robert@homefinlytics.com', 'robkh2008@gmail.com'];
+                const userEmail = auth.currentUser.email ? auth.currentUser.email.toLowerCase() : '';
+                const isAdmin = ADMIN_UIDS.includes(auth.currentUser.uid) || ADMIN_EMAILS.includes(userEmail);
+                
                 if (!isAdmin) {
                     if (typeof showToast === 'function') showToast('Only admins can delete accounts.', 'exclamation-triangle');
                     return;
@@ -449,6 +413,12 @@ function setupAuthButton() {
                     });
                 }
             }
+        });
+    }
+
+    if (settingsSignInBtn) {
+        settingsSignInBtn.addEventListener('click', () => {
+            if (!auth.currentUser && typeof window.showLoginUI === 'function') window.showLoginUI();
         });
     }
 }

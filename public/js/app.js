@@ -1116,8 +1116,8 @@ window.handleAuthStateChanged = (user) => {
         state.currentUser = { uid: user.uid, name: name, email: user.email };
         
         // Role Checking
-        const ADMIN_UIDS = ['PASTE_YOUR_UID_HERE']; // e.g., 'aB3x9Yk...'
-        const ADMIN_EMAILS = ['robert@homefinlytics.com', 'your.google.email@gmail.com']; // Exact matches only
+        const ADMIN_UIDS = ['m0lCGFazrlf8OMlUr1KD61JclVV2', 'PASTE_NEW_UID_HERE'];
+        const ADMIN_EMAILS = ['robert@homefinlytics.com', 'robkh2008@gmail.com']; // Exact matches only
         const userEmail = user.email ? user.email.toLowerCase() : '';
         
         if (ADMIN_UIDS.includes(user.uid) || ADMIN_EMAILS.includes(userEmail)) {
