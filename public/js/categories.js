@@ -11,7 +11,7 @@ function refreshAddFormCategories() {
             } else if (type === 'settlement') {
                 catSelect.innerHTML = '<option value="Settlement" selected>Settlement</option>';
             } else {
-                const cats = state.categories[type] || state.categories['expense'] || [];
+                const cats = state.categories?.[type] || state.categories?.['expense'] || [];
                 catSelect.innerHTML = '<option value="">Select</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
             }
         }
@@ -31,7 +31,7 @@ function updateSubcategoryDropdown() {
     let optionsHTML = '<option value="">Select</option>';
 
     if (catName) {
-        const cats = state.categories[type] || [];
+        const cats = state.categories?.[type] || [];
         const cat = cats.find(c => c.name === catName);
 
         if (cat && cat.subcategories && cat.subcategories.length > 0) {

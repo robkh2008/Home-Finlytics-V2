@@ -25,7 +25,7 @@ function refreshSettings() {
     const budgetList = document.getElementById('budgetSettingsList');
     const isAdmin = state.userRole === 'admin';
     if (budgetList) {
-        budgetList.innerHTML = Object.entries(state.budgets).map(([cat, limit]) => `
+        budgetList.innerHTML = Object.entries(state.budgets || {}).map(([cat, limit]) => `
             <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
                 <span>${escapeHTML(cat)}</span><span>${formatCurrency(limit)}</span>
                 ${isAdmin ? `<button class="btn btn-xs btn-danger remove-budget-btn" data-cat="${escapeHTML(cat)}"><i class="fas fa-times"></i></button>` : ''}
@@ -44,7 +44,7 @@ function refreshSettings() {
     // --- House list ---
     const houseList = document.getElementById('settingsHouseList');
     if (houseList) {
-        houseList.innerHTML = state.houses.map(h => `
+        houseList.innerHTML = (state.houses || []).map(h => `
             <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
                 <span>H${escapeHTML(h.houseNo)} · ${escapeHTML(h.address)} · Tenant: ${escapeHTML(h.tenant)} · Owner: ${escapeHTML(h.owner)} · Rent: ${formatCurrency(h.rent)}</span>
                 ${isAdmin ? `<button class="btn btn-xs btn-danger remove-house-btn" data-id="${escapeHTML(h.id)}"><i class="fas fa-times"></i></button>` : ''}
@@ -58,7 +58,7 @@ function refreshSettingsCatList(cachedType = null) {
     const list = document.getElementById('settingsCatList');
     const isAdmin = state.userRole === 'admin';
     if (!list) return;
-    const cats = state.categories[type] || [];
+    const cats = state.categories?.[type] || [];
     list.innerHTML = cats.map(c => `
         <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--divider);">
             <span style="font-size:1.2rem;width:24px;text-align:center;">${escapeHTML(c.icon || '')}</span>
@@ -72,7 +72,7 @@ function populateSettingsCategorySelect(cachedType = null) {
     const type = (typeof cachedType === 'string' ? cachedType : null) || document.getElementById('settingsCatType')?.value || 'expense';
     const select = document.getElementById('settingsCategorySelect');
     if (!select) return;
-    const cats = state.categories[type] || [];
+    const cats = state.categories?.[type] || [];
     select.innerHTML = '<option value="">-- Choose Category --</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
 }
 
@@ -86,7 +86,7 @@ function refreshSubcategoryList(cachedType = null) {
         container.innerHTML = '<p style="color:var(--text-tertiary);">Select a category to manage subcategories.</p>';
         return;
     }
-    const cats = state.categories[type] || [];
+    const cats = state.categories?.[type] || [];
     const cat = cats.find(c => c.name === catName);
     if (!cat) { container.innerHTML = ''; return; }
     const subs = cat.subcategories || [];
@@ -101,7 +101,7 @@ function renderPayerList() {
     const container = document.getElementById('payerList');
     const isAdmin = state.userRole === 'admin';
     if (!container) return;
-    container.innerHTML = state.payers.map((p, index) => `
+    container.innerHTML = (state.payers || []).map((p, index) => `
         <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
             <span>${escapeHTML(p)}</span>
             ${isAdmin ? `<button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>` : ''}
@@ -113,9 +113,9 @@ function populateBudgetCategories() {
     if (!select) return;
     // Combine expense, groceries, and income categories (unique)
     const combined = [
-        ...(state.categories.expense || []).map(c => c.name),
-        ...(state.categories.groceries || []).map(c => c.name),
-        ...(state.categories.income || []).map(c => c.name),
+        ...(state.categories?.expense || []).map(c => c.name),
+        ...(state.categories?.groceries || []).map(c => c.name),
+        ...(state.categories?.income || []).map(c => c.name),
     ];
     const unique = [...new Set(combined)].sort();
     select.innerHTML = unique.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');

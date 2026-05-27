@@ -1,5 +1,5 @@
 // Change this version number whenever you deploy an update (e.g., to 'finlytics-cache-v2')
-const CACHE_NAME = 'finlytics-cache-v10';
+const CACHE_NAME = 'finlytics-cache-v11';
 
 // Add the core files you want to cache for instant offline loading
 const FILES_TO_CACHE = [

@@ -19,7 +19,7 @@ function refreshDashboard() {
     const dailyAvg = txCount > 0 ? totalExpense / currentDayOfMonth : 0;
     const projectedSpend = dailyAvg * daysInMonth;
     
-    const totalBudget = Object.values(state.budgets).reduce((sum, limit) => sum + parseFloat(limit), 0);
+    const totalBudget = Object.values(state.budgets || {}).reduce((sum, limit) => sum + parseFloat(limit), 0);
     let projectionIcon = '';
     if (totalBudget > 0) {
         if (projectedSpend > totalBudget) {
@@ -133,7 +133,7 @@ function refreshBudgetOverview(txs = null) {
     if (!container) return;
     const now = new Date();
     const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const entries = Object.entries(state.budgets);
+    const entries = Object.entries(state.budgets || {});
     const transactions = txs || getVisibleTransactions();
     if (entries.length === 0) {
         container.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;">No budgets set. Go to Settings to add limits.</p>';

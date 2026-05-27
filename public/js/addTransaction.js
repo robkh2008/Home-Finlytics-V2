@@ -6,6 +6,7 @@ function addTransaction(txData, skipRefresh = false) {
         return null;
     }
     const tx = { id: generateId(), ...txData, createdAt: new Date().toISOString() };
+    if (!state.transactions) state.transactions = [];
     state.transactions.unshift(tx);
     saveState();
     if (!skipRefresh) {
@@ -82,7 +83,7 @@ function refreshAddForm() {
     const houseSelect = document.getElementById('addHouse');
     if (houseSelect) {
         houseSelect.innerHTML = '<option value="">Select</option>' +
-            state.houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)}</option>`).join('');
+            (state.houses || []).map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)}</option>`).join('');
     }
 
     updateSplitCheckboxes();
@@ -90,9 +91,9 @@ function refreshAddForm() {
     // Recurring templates – now with delete and edit buttons
     const templList = document.getElementById('recurringTemplatesList');
     if (templList) {
-        templList.innerHTML = state.recurringTemplates.length === 0
+        templList.innerHTML = (!state.recurringTemplates || state.recurringTemplates.length === 0)
             ? '<p style="color:var(--text-tertiary);text-align:center;">No templates yet.</p>'
-            : state.recurringTemplates.map((t, i) => `
+            : (state.recurringTemplates || []).map((t, i) => `
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--divider);">
                     <span style="cursor:pointer;" class="template-item" data-index="${i}">${escapeHTML(t.category)}${t.subcategory ? ` <small style="color:var(--text-secondary);">(${escapeHTML(t.subcategory.includes(':') ? t.subcategory.split(':').slice(1).join(':').trim() : t.subcategory)})</small>` : ''} · ${formatCurrency(t.amount)}</span>
                     <div style="display:flex;gap:4px;">
@@ -134,7 +135,7 @@ function addCustomSubcategoryToCurrentCategory() {
     const subName = document.getElementById('addCustomSubcatInput')?.value.trim();
     if (!catName || !subName) return;
 
-    const cats = state.categories[type] || [];
+    const cats = state.categories?.[type] || [];
     const cat = cats.find(c => c.name === catName);
     if (!cat) return;
     if (!cat.subcategories) cat.subcategories = [];
@@ -175,7 +176,7 @@ window.updateSplitCheckboxes = function() {
         return;
     }
     splitGroup.style.display = 'block';
-    splitContainer.innerHTML = state.payers
+    splitContainer.innerHTML = (state.payers || [])
         .filter(p => p !== payer)
         .map(p => `<label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;cursor:pointer;"><input type="checkbox" value="${p}" class="split-cb" style="accent-color:var(--accent);"> ${p}</label>`)
         .join('');

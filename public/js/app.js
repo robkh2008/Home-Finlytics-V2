@@ -76,6 +76,16 @@ function loadState() {
     try {
         const saved = localStorage.getItem('home_finlytics_state');
         if (saved) Object.assign(state, JSON.parse(saved));
+
+        // Ensure core structures exist if localStorage returned nulls
+        if (!state.transactions) state.transactions = [];
+        if (!state.categories) state.categories = { expense: [], groceries: [] };
+        if (!state.categories.expense) state.categories.expense = [];
+        if (!state.categories.groceries) state.categories.groceries = [];
+        if (!state.houses) state.houses = [];
+        if (!state.budgets) state.budgets = {};
+        if (!state.recurringTemplates) state.recurringTemplates = [];
+        if (!state.payers) state.payers = [];
     } catch (e) { console.warn('Local storage disabled'); }
 }
 
@@ -104,6 +114,17 @@ function onFirebaseDataReceived(firebaseData) {
     Object.assign(state, firebaseData);
     state.lastUpdated = cloudUpdated;
     state.hasUnsyncedChanges = false;
+
+    // Ensure core structures exist if Firebase returned null (Firebase removes empty arrays/objects)
+    if (!state.transactions) state.transactions = [];
+    if (!state.categories) state.categories = { expense: [], groceries: [] };
+    if (!state.categories.expense) state.categories.expense = [];
+    if (!state.categories.groceries) state.categories.groceries = [];
+    if (!state.houses) state.houses = [];
+    if (!state.budgets) state.budgets = {};
+    if (!state.recurringTemplates) state.recurringTemplates = [];
+    if (!state.payers) state.payers = [];
+
     if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
 
     // Apply structural migrations for Groceries and House Rent
@@ -506,11 +527,11 @@ function bindSettingsEvents() {
         const catName = document.getElementById('settingsCategorySelect').value;
         const subName = document.getElementById('newSubcatName').value.trim();
         if (!catName || !subName) return showToast('Select category and enter subcategory name', 'exclamation-triangle');
-        const cats = state.categories[type] || [];
+        const cats = state.categories?.[type] || [];
         const cat = cats.find(c => c.name === catName);
         if (!cat) return;
         if (!cat.subcategories) cat.subcategories = [];
-        if (cat.subcategories.includes(subName)) return showToast('Subcategory already exists', 'exclamation-triangle');
+        if (cat.subcategories.some(s => s.toLowerCase() === subName.toLowerCase())) return showToast('Subcategory already exists', 'exclamation-triangle');
         cat.subcategories.push(subName);
         saveState();
         refreshSubcategoryList();
@@ -525,7 +546,7 @@ function bindSettingsEvents() {
         const catName = btn.dataset.cat;
         const sub = btn.dataset.sub;
         const type = document.getElementById('settingsCatType').value;
-        const cats = state.categories[type] || [];
+        const cats = state.categories?.[type] || [];
         const cat = cats.find(c => c.name === catName);
         if (cat) cat.subcategories = cat.subcategories.filter(s => s !== sub);
         saveState();
@@ -606,6 +627,7 @@ function bindSettingsEvents() {
         const color = document.getElementById('newCatColor').value;
         const icon = document.getElementById('newCatIcon')?.value || '📁';
         if (!name) { showToast('Enter a category name', 'exclamation-triangle'); return; }
+        if (!state.categories) state.categories = {};
         if (!state.categories[type]) state.categories[type] = [];
         if (state.categories[type].find(c => c.name.toLowerCase() === name.toLowerCase())) {
             showToast('Category already exists', 'exclamation-triangle');
@@ -627,7 +649,7 @@ function bindSettingsEvents() {
             if (state.userRole !== 'admin') return;
             const type = btn.dataset.type;
             const name = btn.dataset.name;
-            state.categories[type] = (state.categories[type] || []).filter(c => c.name !== name);
+            if (state.categories?.[type]) state.categories[type] = state.categories[type].filter(c => c.name !== name);
             saveState();
             refreshSettingsCatList();
             refreshAll();
@@ -635,12 +657,28 @@ function bindSettingsEvents() {
         }
     });
 
+    document.getElementById('restoreDefaultCatsBtn')?.addEventListener('click', function() {
+        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        showConfirm('Restore Defaults', 'Are you sure you want to restore default categories? Any custom categories or subcategories you created will be lost.', 'undo', () => {
+            if (typeof DEFAULT_CATEGORIES !== 'undefined') {
+                state.categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+                saveState();
+                const type = document.getElementById('settingsCatType')?.value || 'expense';
+                if (typeof refreshSettingsCatList === 'function') refreshSettingsCatList(type);
+                if (typeof populateSettingsCategorySelect === 'function') populateSettingsCategorySelect(type);
+                if (typeof refreshSubcategoryList === 'function') refreshSubcategoryList(type);
+                if (typeof refreshAll === 'function') refreshAll();
+                showToast('Default categories restored!', 'check-circle');
+            }
+        });
+    });
+
     // Payers
     document.getElementById('addPayerBtn')?.addEventListener('click', () => {
         if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
         const name = document.getElementById('newPayerName').value.trim();
         if (!name) return showToast('Enter a name', 'exclamation-triangle');
-        if (state.payers.includes(name)) return showToast('Name already exists', 'exclamation-triangle');
+        if (state.payers.some(p => p.toLowerCase() === name.toLowerCase())) return showToast('Name already exists', 'exclamation-triangle');
         state.payers.push(name);
         saveState();
         renderPayerList();

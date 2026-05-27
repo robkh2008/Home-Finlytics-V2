@@ -4,7 +4,7 @@ function refreshReceiptForm() {
     const sel = document.getElementById('receiptHouse');
     if (sel) {
         sel.innerHTML = '<option value="">Select</option>' +
-            state.houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)} (Owner: ${escapeHTML(h.owner)})</option>`).join('');
+            (state.houses || []).map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)} (Owner: ${escapeHTML(h.owner)})</option>`).join('');
             
     }
     
