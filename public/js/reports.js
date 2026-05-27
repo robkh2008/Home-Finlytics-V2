@@ -3,7 +3,9 @@ let analyticsBalanceChart, analyticsTopCatChart, analyticsMonthlyChart, analytic
 let analyticsMonthlyBreakdownPeriod = 6;
 let analyticsExpenseTrendPeriod = 6;
 
-function refreshAnalytics() {
+async function refreshAnalytics() {
+    await loadChartJs();
+
     // Safety check
     if (typeof Chart === 'undefined') {
         console.warn('Chart.js not loaded – analytics disabled.');
@@ -52,7 +54,13 @@ function refreshAnalytics() {
     setupAnalyticsTrendPeriodSelector();
 }
 
-function renderAnalyticsCharts(filteredTxs) {
+async function renderAnalyticsCharts(filteredTxs) {
+    const isLoaded = await loadChartJs();
+    if (!isLoaded || typeof Chart === 'undefined') {
+        console.warn('Chart.js failed to load – analytics charts disabled.');
+        return;
+    }
+
     const filtered = filteredTxs || getVisibleTransactions();
     const allTxs = getVisibleTransactions(); // Cached unfiltered list for bypass charts
     const style = getComputedStyle(document.documentElement);

@@ -29,7 +29,7 @@ function getCategoryColor(catName, type) {
     if (catName === 'Settlement') return '#34c759';
     if (catName === 'Lent') return '#ff9500';
     if (catName === 'Returned') return '#34c759';
-    const cats = state.categories?.[type] || [];
+    const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : [];
     const found = cats.find(c => c.name.toLowerCase() === catName.toLowerCase());
     return found?.color || '#8e8e93';
 }
@@ -38,7 +38,7 @@ function getCategoryIcon(catName, type) {
     if (catName === 'Settlement') return '🤝';
     if (catName === 'Lent') return '📤';
     if (catName === 'Returned') return '📥';
-    const cats = state.categories?.[type] || [];
+    const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : [];
     const found = cats.find(c => c.name.toLowerCase() === catName.toLowerCase());
     return found?.icon ? escapeHTML(found.icon) : '📁';
 }
@@ -166,4 +166,19 @@ function getVisibleTransactions() {
     return state.transactions.filter(tx => 
         tx.type === 'groceries' || (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
     );
+}
+
+let _chartJsLoadPromise = null;
+async function loadChartJs() {
+    if (typeof window.Chart !== 'undefined') return true;
+    if (_chartJsLoadPromise) return _chartJsLoadPromise;
+    
+    _chartJsLoadPromise = new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => { _chartJsLoadPromise = null; resolve(false); };
+        document.head.appendChild(script);
+    });
+    return _chartJsLoadPromise;
 }

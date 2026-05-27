@@ -11,7 +11,7 @@ function refreshAddFormCategories() {
             } else if (type === 'settlement') {
                 catSelect.innerHTML = '<option value="Settlement" selected>Settlement</option>';
             } else {
-                const cats = state.categories?.[type] || state.categories?.['expense'] || [];
+                const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : (state.categories?.['expense'] ? Object.values(state.categories['expense']).filter(Boolean) : []);
                 catSelect.innerHTML = '<option value="">Select</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
             }
         }
@@ -31,14 +31,15 @@ function updateSubcategoryDropdown() {
     let optionsHTML = '<option value="">Select</option>';
 
     if (catName) {
-        const cats = state.categories?.[type] || [];
+        const cats = state.categories?.[type] ? Object.values(state.categories[type]).filter(Boolean) : [];
         const cat = cats.find(c => c.name === catName);
 
-        if (cat && cat.subcategories && cat.subcategories.length > 0) {
+        const subs = cat && cat.subcategories ? Object.values(cat.subcategories).filter(Boolean) : [];
+        if (subs.length > 0) {
             let groups = {};
             let ungrouped = [];
             
-            cat.subcategories.forEach(sub => {
+            subs.forEach(sub => {
                 if (sub.includes(':')) {
                     let parts = sub.split(':');
                     let g = parts[0].trim();

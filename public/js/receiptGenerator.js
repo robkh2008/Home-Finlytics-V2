@@ -3,8 +3,9 @@
 function refreshReceiptForm() {
     const sel = document.getElementById('receiptHouse');
     if (sel) {
+        const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
         sel.innerHTML = '<option value="">Select</option>' +
-            (state.houses || []).map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)} (Owner: ${escapeHTML(h.owner)})</option>`).join('');
+            houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)} (Owner: ${escapeHTML(h.owner)})</option>`).join('');
             
     }
     
@@ -29,7 +30,8 @@ function refreshReceiptForm() {
 function generateReceipt() {
     try {
         const houseId = document.getElementById('receiptHouse').value;
-        const house = state.houses.find(h => h.id === houseId);
+        const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
+        const house = houses.find(h => h.id === houseId);
         if (!house) {
             showToast('Please select a house', 'exclamation-triangle');
             return;
@@ -165,7 +167,8 @@ function generateReceipt() {
         if (!savedTx) return; // Abort if transaction failed validation (e.g., amount <= 0)
 
         // Add payer to list if new
-        if (payerName && !state.payers.includes(payerName)) {
+        const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
+        if (payerName && !payers.includes(payerName)) {
             state.payers.push(payerName);
             if (typeof saveState === 'function') saveState();
             if (typeof renderPayerList === 'function') renderPayerList();
@@ -206,6 +209,18 @@ window.addEventListener('afterprint', () => {
     document.body.classList.remove('printing-receipt');
 });
 
+async function loadHtml2Canvas() {
+    if (typeof window.html2canvas !== 'undefined') return true;
+    if (typeof showToast === 'function') showToast('Loading image processor...', 'hourglass-half');
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+    });
+}
+
 function showReceiptActionButtons(receiptNo = '') {
     const previewCard = document.getElementById('receiptPreviewCard');
     if (!previewCard) return;
@@ -233,8 +248,9 @@ function showReceiptActionButtons(receiptNo = '') {
         if (!receiptPaper) return;
         
         try {
-            if (typeof html2canvas === 'undefined') {
-                showToast('html2canvas library is missing.', 'exclamation-triangle');
+            const isLoaded = await loadHtml2Canvas();
+            if (!isLoaded) {
+                showToast('Failed to load html2canvas library.', 'exclamation-triangle');
                 return;
             }
             const canvas = await html2canvas(receiptPaper, { 
@@ -269,8 +285,9 @@ function showReceiptActionButtons(receiptNo = '') {
         const receiptPaper = document.getElementById('receiptPaper');
         if (!receiptPaper) return;
         try {
-            if (typeof html2canvas === 'undefined') {
-                showToast('html2canvas library is missing.', 'exclamation-triangle');
+            const isLoaded = await loadHtml2Canvas();
+            if (!isLoaded) {
+                showToast('Failed to load html2canvas library.', 'exclamation-triangle');
                 return;
             }
             const canvas = await html2canvas(receiptPaper, { scale: 2, backgroundColor: '#ffffff', useCORS: true });

@@ -9,8 +9,9 @@ function populateFilterCategories() {
     let categories = [];
     if (filterType === 'all') {
         // Merge all categories from expense, groceries
-        const expenseCats = (state.categories?.expense || []).map(c => c.name);
-        const groceriesCats = (state.categories?.groceries || []).map(c => c.name);
+        const getNames = (catArray) => catArray ? Object.values(catArray).filter(Boolean).map(c => c.name) : [];
+        const expenseCats = getNames(state.categories?.expense);
+        const groceriesCats = getNames(state.categories?.groceries);
         categories = [...new Set([...expenseCats, ...groceriesCats])].sort();
     } else {
         const typeMap = {
@@ -19,7 +20,7 @@ function populateFilterCategories() {
             rent: 'expense'   // rent uses expense categories for filtering
         };
         const src = typeMap[filterType] || 'expense';
-        categories = (state.categories?.[src] || []).map(c => c.name).sort();
+        categories = state.categories?.[src] ? Object.values(state.categories[src]).filter(Boolean).map(c => c.name).sort() : [];
     }
 
     const currentValue = filterCat.value;
@@ -40,11 +41,13 @@ function populateFilterSubcategories() {
     let subcategories = [];
     if (filterCat !== 'all') {
         const allCats = [
-            ...(state.categories?.expense || []),
-            ...(state.categories?.groceries || [])
+            ...(state.categories?.expense ? Object.values(state.categories.expense).filter(Boolean) : []),
+            ...(state.categories?.groceries ? Object.values(state.categories.groceries).filter(Boolean) : [])
         ];
         allCats.filter(c => c.name === filterCat).forEach(c => {
-            if (c.subcategories) subcategories.push(...c.subcategories);
+            if (c.subcategories) {
+                subcategories.push(...Object.values(c.subcategories).filter(Boolean));
+            }
         });
         subcategories = [...new Set(subcategories)].sort();
     }
@@ -77,9 +80,10 @@ function populateFilterPayers() {
     const filterPayer = document.getElementById('filterPayer');
     if (!filterPayer) return;
     const currentValue = filterPayer.value;
+    const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
     filterPayer.innerHTML = '<option value="all">All Payers</option>' +
-        (state.payers || []).map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');
-    if (currentValue && ((state.payers || []).includes(currentValue) || currentValue === 'all')) {
+        payers.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');
+    if (currentValue && (payers.includes(currentValue) || currentValue === 'all')) {
         filterPayer.value = currentValue;
     }
 }

@@ -8,5 +8,11 @@ export default defineConfig({
     outDir: '../dist',
     // Clean the dist folder before each build (required when outDir is outside root)
     emptyOutDir: true,
+    // Target modern browsers to keep bundle size minimal
+    target: 'esnext',
+  },
+  esbuild: {
+    // Automatically drop all console.logs and debuggers in the production build
+    drop: ['console', 'debugger'],
   }
 });

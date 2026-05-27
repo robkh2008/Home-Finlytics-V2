@@ -80,12 +80,31 @@ function loadState() {
         // Ensure core structures exist if localStorage returned nulls
         if (!state.transactions) state.transactions = [];
         if (!state.categories) state.categories = { expense: [], groceries: [] };
-        if (!state.categories.expense) state.categories.expense = [];
-        if (!state.categories.groceries) state.categories.groceries = [];
-        if (!state.houses) state.houses = [];
+        
+        if (state.categories.expense) state.categories.expense = Object.values(state.categories.expense).filter(Boolean);
+        if (state.categories.groceries) state.categories.groceries = Object.values(state.categories.groceries).filter(Boolean);
+        
+        ['expense', 'groceries'].forEach(type => {
+            if (state.categories[type]) {
+                state.categories[type].forEach(cat => {
+                    if (cat.subcategories) {
+                        cat.subcategories = Object.values(cat.subcategories).filter(Boolean);
+                    }
+                });
+            }
+        });
+        
+        if (state.houses) state.houses = Object.values(state.houses).filter(Boolean);
+        if (state.recurringTemplates) state.recurringTemplates = Object.values(state.recurringTemplates).filter(Boolean);
+        if (state.payers) state.payers = Object.values(state.payers).filter(Boolean);
+        
+        if (!state.categories.expense || state.categories.expense.length === 0) state.categories.expense = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.expense)) : [];
+        if (!state.categories.groceries || state.categories.groceries.length === 0) state.categories.groceries = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.groceries)) : [];
+        if (!state.houses || state.houses.length === 0) state.houses = [...(typeof DEFAULT_HOUSES !== 'undefined' ? DEFAULT_HOUSES : [])];
+        if (!state.payers || state.payers.length === 0) state.payers = [...(typeof DEFAULT_PAYERS !== 'undefined' ? DEFAULT_PAYERS : [])];
+        
         if (!state.budgets) state.budgets = {};
         if (!state.recurringTemplates) state.recurringTemplates = [];
-        if (!state.payers) state.payers = [];
     } catch (e) { console.warn('Local storage disabled'); }
 }
 
@@ -118,12 +137,31 @@ function onFirebaseDataReceived(firebaseData) {
     // Ensure core structures exist if Firebase returned null (Firebase removes empty arrays/objects)
     if (!state.transactions) state.transactions = [];
     if (!state.categories) state.categories = { expense: [], groceries: [] };
-    if (!state.categories.expense) state.categories.expense = [];
-    if (!state.categories.groceries) state.categories.groceries = [];
-    if (!state.houses) state.houses = [];
+    
+    if (state.categories.expense) state.categories.expense = Object.values(state.categories.expense).filter(Boolean);
+    if (state.categories.groceries) state.categories.groceries = Object.values(state.categories.groceries).filter(Boolean);
+    
+    ['expense', 'groceries'].forEach(type => {
+        if (state.categories[type]) {
+            state.categories[type].forEach(cat => {
+                if (cat.subcategories) {
+                    cat.subcategories = Object.values(cat.subcategories).filter(Boolean);
+                }
+            });
+        }
+    });
+
+    if (state.houses) state.houses = Object.values(state.houses).filter(Boolean);
+    if (state.recurringTemplates) state.recurringTemplates = Object.values(state.recurringTemplates).filter(Boolean);
+    if (state.payers) state.payers = Object.values(state.payers).filter(Boolean);
+
+    if (!state.categories.expense || state.categories.expense.length === 0) state.categories.expense = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.expense)) : [];
+    if (!state.categories.groceries || state.categories.groceries.length === 0) state.categories.groceries = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.groceries)) : [];
+    if (!state.houses || state.houses.length === 0) state.houses = [...(typeof DEFAULT_HOUSES !== 'undefined' ? DEFAULT_HOUSES : [])];
+    if (!state.payers || state.payers.length === 0) state.payers = [...(typeof DEFAULT_PAYERS !== 'undefined' ? DEFAULT_PAYERS : [])];
+    
     if (!state.budgets) state.budgets = {};
     if (!state.recurringTemplates) state.recurringTemplates = [];
-    if (!state.payers) state.payers = [];
 
     if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
 
@@ -1147,21 +1185,17 @@ async function triggerUnlock() {
 }
 
 // ==================== INIT ====================
-window.handleAuthStateChanged = (user) => {
+window.handleAuthStateChanged = async (user) => {
     const wasUser = !!state.currentUser;
     if (user) {
         const name = user.displayName || user.email.split('@')[0];
         state.currentUser = { uid: user.uid, name: name, email: user.email };
         
-        // Role Checking
-        const ADMIN_UIDS = ['m0lCGFazrlf8OMlUr1KD61JclVV2', 'PASTE_NEW_UID_HERE'];
-        const ADMIN_EMAILS = ['robert@homefinlytics.com', 'robkh2008@gmail.com']; // Exact matches only
-        const userEmail = user.email ? user.email.toLowerCase() : '';
-        
-        if (ADMIN_UIDS.includes(user.uid) || ADMIN_EMAILS.includes(userEmail)) {
-            state.userRole = 'admin';
+        // Fetch role from Firebase dynamically
+        if (typeof window.checkUserRole === 'function') {
+            state.userRole = await window.checkUserRole(user);
         } else {
-            state.userRole = 'user'; // Esther, Gedion, Angela
+            state.userRole = 'user';
         }
         
         const syncUserLabel = document.getElementById('syncUserName');

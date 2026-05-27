@@ -161,9 +161,10 @@ function refreshBudgetOverview(txs = null) {
     }).join('');
 }
 
-function renderDashboardCharts(transactions = null) {
-    if (typeof Chart === 'undefined') {
-        console.warn('Chart.js not loaded – dashboard charts disabled.');
+async function renderDashboardCharts(transactions = null) {
+    const isLoaded = await loadChartJs();
+    if (!isLoaded || typeof Chart === 'undefined') {
+        console.warn('Chart.js failed to load – dashboard charts disabled.');
         return;
     }
 

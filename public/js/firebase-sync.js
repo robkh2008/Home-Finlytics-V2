@@ -2,7 +2,7 @@
 
 // 1. Import Firebase functions from the npm package
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import { getDatabase, ref, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 
@@ -168,11 +168,23 @@ export function listenToConnectionStatus(onStatusChanged) {
     });
 }
 
+// NEW: Dynamically check if user is an Admin from the database
+export async function checkUserRole(user) {
+    if (!user) return 'user';
+    const encodedEmail = user.email ? user.email.toLowerCase().replace(/\./g, ',') : '';
+    try {
+        const emailSnap = await get(ref(database, `admins/emails/${encodedEmail}`));
+        const uidSnap = await get(ref(database, `admins/uids/${user.uid}`));
+        return (emailSnap.val() === true || uidSnap.val() === true) ? 'admin' : 'user';
+    } catch (e) { return 'user'; }
+}
+
 // 7. Expose functions globally so storage.js can use them
 window.saveStateToFirebase = saveStateToFirebase;
 window.listenToFirebaseState = listenToFirebaseState;
 window.detachFirebaseListeners = detachFirebaseListeners;
 window.listenToConnectionStatus = listenToConnectionStatus;
+window.checkUserRole = checkUserRole;
 
 // 8. Auth logic: Only sync if logged in
 window.showLoginUI = (isMandatory = false) => {
@@ -391,27 +403,24 @@ function setupAuthButton() {
     if (settingsDeleteAccountBtn) {
         settingsDeleteAccountBtn.addEventListener('click', () => {
             if (auth.currentUser) {
-                const ADMIN_UIDS = ['m0lCGFazrlf8OMlUr1KD61JclVV2', 'PASTE_NEW_UID_HERE'];
-                const ADMIN_EMAILS = ['robert@homefinlytics.com', 'robkh2008@gmail.com'];
-                const userEmail = auth.currentUser.email ? auth.currentUser.email.toLowerCase() : '';
-                const isAdmin = ADMIN_UIDS.includes(auth.currentUser.uid) || ADMIN_EMAILS.includes(userEmail);
-                
-                if (!isAdmin) {
-                    if (typeof showToast === 'function') showToast('Only admins can delete accounts.', 'exclamation-triangle');
-                    return;
-                }
-                if (confirm("DANGER: Are you sure you want to permanently delete your Firebase account? This cannot be undone.")) {
-                    deleteUser(auth.currentUser).then(() => {
-                        localStorage.removeItem('home_finlytics_state');
-                        if (typeof showToast === 'function') showToast('Account deleted successfully.', 'check-circle');
-                    }).catch(err => {
-                        if (err.code === 'auth/requires-recent-login') {
-                            if (typeof showToast === 'function') showToast('Please sign out and log back in to verify your identity before deleting your account.', 'times-circle');
-                        } else {
-                            if (typeof showToast === 'function') showToast(err.message, 'times-circle');
-                        }
-                    });
-                }
+                checkUserRole(auth.currentUser).then(role => {
+                    if (role !== 'admin') {
+                        if (typeof showToast === 'function') showToast('Only admins can delete accounts.', 'exclamation-triangle');
+                        return;
+                    }
+                    if (confirm("DANGER: Are you sure you want to permanently delete your Firebase account? This cannot be undone.")) {
+                        deleteUser(auth.currentUser).then(() => {
+                            localStorage.removeItem('home_finlytics_state');
+                            if (typeof showToast === 'function') showToast('Account deleted successfully.', 'check-circle');
+                        }).catch(err => {
+                            if (err.code === 'auth/requires-recent-login') {
+                                if (typeof showToast === 'function') showToast('Please sign out and log back in to verify your identity before deleting your account.', 'times-circle');
+                            } else {
+                                if (typeof showToast === 'function') showToast(err.message, 'times-circle');
+                            }
+                        });
+                    }
+                });
             }
         });
     }

@@ -63,8 +63,11 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event: Serve from cache if available, otherwise fetch from network
 self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests and non-GET requests (like Firebase POSTs)
-  if (!event.request.url.startsWith(self.location.origin) || event.request.method !== 'GET') {
+  // Allow caching for our own domain AND specific external CDNs (Firebase, Chart.js, etc.)
+  const isCrossOriginCacheable = event.request.url.startsWith('https://www.gstatic.com/firebasejs/') ||
+                                 event.request.url.startsWith('https://cdnjs.cloudflare.com/ajax/libs/');
+
+  if (event.request.method !== 'GET' || (!event.request.url.startsWith(self.location.origin) && !isCrossOriginCacheable)) {
     return;
   }
 

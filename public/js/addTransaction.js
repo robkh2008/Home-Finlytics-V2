@@ -82,8 +82,9 @@ function refreshAddForm() {
     // Populate houses
     const houseSelect = document.getElementById('addHouse');
     if (houseSelect) {
+        const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
         houseSelect.innerHTML = '<option value="">Select</option>' +
-            (state.houses || []).map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)}</option>`).join('');
+            houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)}</option>`).join('');
     }
 
     updateSplitCheckboxes();
@@ -91,9 +92,10 @@ function refreshAddForm() {
     // Recurring templates – now with delete and edit buttons
     const templList = document.getElementById('recurringTemplatesList');
     if (templList) {
-        templList.innerHTML = (!state.recurringTemplates || state.recurringTemplates.length === 0)
+        const templates = state.recurringTemplates ? Object.values(state.recurringTemplates).filter(Boolean) : [];
+        templList.innerHTML = templates.length === 0
             ? '<p style="color:var(--text-tertiary);text-align:center;">No templates yet.</p>'
-            : (state.recurringTemplates || []).map((t, i) => `
+            : templates.map((t, i) => `
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--divider);">
                     <span style="cursor:pointer;" class="template-item" data-index="${i}">${escapeHTML(t.category)}${t.subcategory ? ` <small style="color:var(--text-secondary);">(${escapeHTML(t.subcategory.includes(':') ? t.subcategory.split(':').slice(1).join(':').trim() : t.subcategory)})</small>` : ''} · ${formatCurrency(t.amount)}</span>
                     <div style="display:flex;gap:4px;">
@@ -176,7 +178,8 @@ window.updateSplitCheckboxes = function() {
         return;
     }
     splitGroup.style.display = 'block';
-    splitContainer.innerHTML = (state.payers || [])
+    const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
+    splitContainer.innerHTML = payers
         .filter(p => p !== payer)
         .map(p => `<label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;cursor:pointer;"><input type="checkbox" value="${p}" class="split-cb" style="accent-color:var(--accent);"> ${p}</label>`)
         .join('');
