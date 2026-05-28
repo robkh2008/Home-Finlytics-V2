@@ -1210,6 +1210,12 @@ function bindSettingsEvents() {
             deferredPrompt = null;
             const installCard = document.getElementById('installAppCard');
             if (installCard) installCard.style.display = 'none';
+        } else {
+            // On iOS, the button is instructional — show a toast reminder
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            if (isIOS) {
+                showToast('Tap Safari Share icon ⎙ → Add to Home Screen', 'share-square');
+            }
         }
     });
 
@@ -1785,21 +1791,37 @@ window.addEventListener('appinstalled', () => {
 });
 
 // iOS specific PWA prompt (iOS Safari doesn't support beforeinstallprompt)
-document.addEventListener('DOMContentLoaded', () => {
+function checkIOSInstall() {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    const installCard = document.getElementById('installAppCard');
+    const installBtn = document.getElementById('installAppBtn');
+    if (!installCard || !installBtn) return;
     
     if (isIOS && !isStandalone) {
-        const installCard = document.getElementById('installAppCard');
-        const installBtn = document.getElementById('installAppBtn');
-        if (installCard && installBtn) {
-            installCard.style.display = 'block';
-            installBtn.innerHTML = '<i class="fas fa-share-square"></i> Tap Share, then "Add to Home Screen"';
-            installBtn.style.pointerEvents = 'none'; // Instructional only
-            installBtn.classList.replace('btn-primary', 'btn-secondary');
+        installCard.style.display = 'block';
+        installBtn.innerHTML = '<i class="fas fa-share-square"></i> Share → Add to Home Screen';
+        installBtn.style.pointerEvents = 'none';
+        installBtn.classList.add('btn-secondary');
+        installBtn.classList.remove('btn-primary');
+        const desc = document.getElementById('installAppDesc');
+        if (desc) desc.innerHTML = 'Tap the <strong>Share</strong> icon <span style="font-size:1.2rem;">⎙</span> in Safari, then scroll down and tap <strong>"Add to Home Screen"</strong>.';
+    } else if (!isStandalone) {
+        // On Android, the beforeinstallprompt event will show the card
+        // But also check if already installed
+        if (!deferredPrompt) {
+            installCard.style.display = 'none';
         }
+    } else {
+        // Already installed
+        installCard.style.display = 'none';
     }
-});
+}
+
+// Run on DOM load and also when settings are refreshed
+document.addEventListener('DOMContentLoaded', checkIOSInstall);
+// Expose it so refreshSettings can call it
+window.checkIOSInstall = checkIOSInstall;
 
 // ==================== NETWORK STATUS NOTIFICATIONS ====================
 window.addEventListener('online', () => {

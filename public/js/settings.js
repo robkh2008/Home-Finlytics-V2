@@ -41,6 +41,9 @@ function refreshSettings() {
     // --- Payer Management ---
     renderPayerList();
 
+    // --- Install prompt (re-check iOS detection) ---
+    if (typeof window.checkIOSInstall === 'function') window.checkIOSInstall();
+
     // --- House list ---
     const houseList = document.getElementById('settingsHouseList');
     if (houseList) {

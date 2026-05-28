@@ -7,6 +7,8 @@
   "background_color": "#121212",
   "theme_color": "#121212",
   "orientation": "portrait",
+  "categories": ["finance", "productivity", "utilities"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "images/icon-192.png",
@@ -19,6 +21,21 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "images/screenshot-1.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dashboard overview"
     }
   ]
 }

@@ -4,12 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="Home Finlytics - A powerful property management and expense tracking Progressive Web App.">
-    <meta name="theme-color" content="#121212">
+    <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+    <meta name="color-scheme" content="dark light">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Finlytics">
     <link rel="apple-touch-icon" href="/images/icon-192.png">
+    <link rel="apple-touch-startup-image" href="/images/splash-ios.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
     <link rel="manifest" href="/manifest.json">
+    <!-- Android Chrome install prompt -->
+    <meta name="mobile-web-app-capable" content="yes">
 
     <title>Home Finlytics</title>
 
@@ -62,8 +68,9 @@
 
     <!-- Splash Screen -->
     <div id="splashScreen" class="splash-screen">
-        <div class="splash-icon"><i class="fas fa-chart-pie"></i></div>
-        <h1 style="font-weight:700;letter-spacing:-0.02em;">Home Finlytics</h1>
+        <div class="splash-icon"><span class="logo-mark logo-mark-splash"><i class="fas fa-chart-pie"></i></span></div>
+        <h1 class="splash-title">Home Finlytics</h1>
+        <p class="splash-tagline">Smart Finance Tracking</p>
         <div class="splash-loader"></div>
     </div>
 
@@ -124,7 +131,7 @@
     <div id="appShell" class="app-shell" style="display:none;">
         <!-- Header -->
         <header class="app-header">
-            <span class="header-logo"><i class="fas fa-chart-pie"></i> Home Finlytics</span>
+            <span class="header-logo"><span class="logo-mark"><i class="fas fa-chart-pie"></i></span> <span class="logo-text">Home Finlytics</span></span>
             <div class="header-right">
                 <span id="headerUserName" class="header-user-name" style="display:none;"></span>
                 <button id="headerSyncBtn" class="icon-btn" title="Sync" aria-label="Sync Data Status"><i class="fas fa-cloud-arrow-up"></i>
@@ -407,7 +414,7 @@
                     <!-- App Installation -->
                     <div class="card glass-card settings-card" id="installAppCard" style="display:none; background: linear-gradient(135deg, rgba(0,122,255,0.1) 0%, rgba(52,199,89,0.1) 100%); border: 1px solid rgba(0,122,255,0.3);">
                         <h3 class="card-title" style="color: var(--accent);"><i class="fas fa-mobile-alt" style="margin-right: 8px;"></i> Install Home Finlytics</h3>
-                        <p style="font-size:var(--font-size-sm);color:var(--text-primary);margin-bottom:16px;line-height:1.4;">Get the full app experience. Install Home Finlytics on your home screen for quick access and instant offline use.</p>
+                        <p id="installAppDesc" style="font-size:var(--font-size-sm);color:var(--text-primary);margin-bottom:16px;line-height:1.4;">Get the full app experience. Install Home Finlytics on your home screen for quick access and instant offline use.</p>
                         <button id="installAppBtn" class="btn btn-primary btn-full" style="border-radius: 20px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,122,255,0.3);"><i class="fas fa-download"></i> Add to Home Screen</button>
                     </div>
                     <!-- Storage / Cache -->

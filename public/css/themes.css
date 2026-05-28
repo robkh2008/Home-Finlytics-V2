@@ -1,4 +1,5 @@
 :root {
+    color-scheme: light;
     /* Light Theme (Default fallback) */
     --bg-primary: #f2f2f7;
     --bg-secondary: #ffffff;
@@ -38,9 +39,11 @@
     --transition-fast: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --safe-bottom: env(safe-area-inset-bottom, 16px);
+    --safe-top: env(safe-area-inset-top, 8px);
 }
 
 [data-theme="dark"] {
+    color-scheme: dark;
     --bg-primary: #0d0d0f;
     --bg-secondary: #1c1c1e;
     --bg-tertiary: #262628;

@@ -23,11 +23,11 @@
 }
 
 .summary-row .summary-value {
-    font-size: var(--font-size-xl);
+    font-size: clamp(14px, 5.2vw, var(--font-size-xl));
     font-weight: 700;
-    word-break: break-all;
-    overflow-wrap: break-word;
-    hyphens: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     line-height: 1.2;
 }
 
@@ -44,7 +44,7 @@
         margin-bottom: 6px;
     }
     .summary-row .summary-value {
-        font-size: 16px;
+        font-size: clamp(13px, 4.8vw, 16px);
     }
 }
 
@@ -57,7 +57,7 @@
         padding: 10px 3px;
     }
     .summary-row .summary-value {
-        font-size: 14px;
+        font-size: clamp(11px, 4.2vw, 14px);
     }
 }
 
