@@ -4,7 +4,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser, GoogleAuthProvider, signInWithPopup, linkWithPopup, unlink } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
 
 
 // 2. Paste YOUR config object here
@@ -22,7 +21,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
-const functions = getFunctions(app, 'asia-southeast1');
 
 let unsubscribeNodes = [];
 let unsubscribePublicTxs = null;
@@ -43,17 +41,35 @@ export function saveStateToFirebase(appState) {
     const currentPublicIds = new Set();
     const currentPrivateIds = new Set();
 
+    // Build a house lookup to check for admin residence
+    const housesMap = {};
+    if (appState.houses) {
+        appState.houses.forEach(h => {
+            if (h && h.id) housesMap[h.id] = h;
+        });
+    }
+
     if (appState.transactions) {
         appState.transactions.forEach(tx => {
             if (tx && tx.id) {
-                // Public transactions: groceries, rent, lent, returned, settlement
-                const isPublicType = tx.type === 'groceries' || tx.type === 'rent' ||
-                                     tx.type === 'lent' || tx.type === 'returned' || tx.type === 'settlement';
-                if (isPublicType || (tx.type === 'expense' && tx.category === 'House Rent')) {
+                // Public transactions: groceries, rent (non-admin house), lent, returned, settlement
+                let isPublicType = tx.type === 'groceries' ||
+                                   tx.type === 'lent' || tx.type === 'returned' || tx.type === 'settlement';
+                // Check if this transaction is house rent (either type:'rent' or expense with 'House Rent' category)
+                const isHouseRent = tx.type === 'rent' || (tx.type === 'expense' && tx.category === 'House Rent');
+                if (isHouseRent) {
+                    const house = housesMap[tx.houseId];
+                    if (house && house.isAdminHouse) {
+                        isPublicType = false; // Admin house rent → private
+                    } else {
+                        isPublicType = true;  // Tenant house rent → public
+                    }
+                }
+                if (isPublicType) {
                     updates[`/appState/transactions_public/${tx.id}`] = tx;
                     currentPublicIds.add(tx.id);
-                } else if (tx.type === 'expense') {
-                    // All expense transactions written to private node (admin-only visibility)
+                } else if (tx.type === 'expense' || tx.type === 'rent') {
+                    // Private: expense transactions + admin house rent transactions
                     updates[`/appState/transactions_private/${tx.id}`] = tx;
                     currentPrivateIds.add(tx.id);
                 }
@@ -261,11 +277,17 @@ export async function loadUserProfile(user) {
     } catch (e) { return null; }
 }
 
-// NEW: Save user profile to Firebase
+// NEW: Save user profile to Firebase (includes email + timestamps for admin listing)
 export async function saveUserProfile(user, profileData) {
     if (!user) return Promise.reject('Not authenticated');
     try {
-        await update(ref(database, `profiles/${user.uid}`), profileData);
+        const data = {
+            ...profileData,
+            email: user.email || '',
+            lastSignIn: new Date().toISOString(),
+            created: profileData.created || new Date().toISOString()
+        };
+        await update(ref(database, `profiles/${user.uid}`), data);
         return true;
     } catch (e) {
         console.error('Profile save error:', e.message);
@@ -375,25 +397,61 @@ window.unlinkGoogleAccount = unlinkGoogleAccount;
 window.hasGoogleLinked = hasGoogleLinked;
 window.forcePullFromCloud = forcePullFromCloud;
 
-// NEW: Admin user management via Cloud Functions
-export async function adminListUsers() {
-    const listFn = httpsCallable(functions, 'adminListUsers');
-    const result = await listFn();
-    return result.data;
+// NEW: Client-side admin user management (no Cloud Functions needed)
+// Lists all users from the profiles node + admins node in Realtime Database
+export async function adminListUsersRTDB() {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    const [profilesSnap, adminsSnap] = await Promise.all([
+        get(ref(database, 'profiles')),
+        get(ref(database, 'admins'))
+    ]);
+    const profiles = profilesSnap.val() || {};
+    const admins = adminsSnap.val() || {};
+    const adminUids = admins.uids || {};
+    const adminEmails = admins.emails || {};
+    
+    return Object.entries(profiles).map(([uid, profile]) => ({
+        uid,
+        email: profile.email || '',
+        displayName: profile.displayName || '',
+        isAdmin: adminUids[uid] === true || (profile.email && adminEmails[profile.email.toLowerCase().replace(/\./g, ',')] === true),
+        lastSignIn: profile.lastSignIn || null,
+        created: profile.created || null
+    }));
 }
-export async function adminSetAdmin(uid, email, isAdmin) {
-    const setFn = httpsCallable(functions, 'adminSetAdmin');
-    const result = await setFn({ uid, email, isAdmin });
-    return result.data;
+
+// Promote/demote admin from client-side
+export async function adminSetAdminRTDB(uid, email, isAdmin) {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    const updates = {};
+    if (uid) updates[`admins/uids/${uid}`] = isAdmin ? true : null;
+    if (email) {
+        const encodedEmail = email.toLowerCase().replace(/\./g, ',');
+        updates[`admins/emails/${encodedEmail}`] = isAdmin ? true : null;
+    }
+    await update(ref(database), updates);
+    return { success: true };
 }
-export async function adminDeleteUser(uid) {
-    const delFn = httpsCallable(functions, 'adminDeleteUser');
-    const result = await delFn({ uid });
-    return result.data;
+
+// Remove user profile + admin status (can't delete Auth account from client)
+export async function adminRemoveUserRTDB(uid, email) {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    if (uid === auth.currentUser.uid) throw new Error('Cannot remove yourself');
+    const updates = {};
+    if (uid) {
+        updates[`profiles/${uid}`] = null;
+        updates[`admins/uids/${uid}`] = null;
+    }
+    if (email) {
+        updates[`admins/emails/${email.toLowerCase().replace(/\./g, ',')}`] = null;
+    }
+    await update(ref(database), updates);
+    return { success: true };
 }
-window.adminListUsers = adminListUsers;
-window.adminSetAdmin = adminSetAdmin;
-window.adminDeleteUser = adminDeleteUser;
+
+window.adminListUsersRTDB = adminListUsersRTDB;
+window.adminSetAdminRTDB = adminSetAdminRTDB;
+window.adminRemoveUserRTDB = adminRemoveUserRTDB;
 
 // 8. Auth logic: Only sync if logged in — Google-first design
 window.showLoginUI = (isMandatory = false) => {

@@ -1,5 +1,6 @@
 {
     "recommendations": [
-        "google.geminicodeassist"
+        "google.geminicodeassist",
+        "laurent00tt.deepseek-v4-vscode-chat"
     ]
 }

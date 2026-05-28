@@ -29,10 +29,10 @@ async function refreshAnalytics() {
     const filterDateThreshold = period === 'month' ? startDate + '-01' : startDate + '-01-01';
     const filtered = txs.filter(t => t.date >= filterDateThreshold);
 
-    const expTxs = filtered.filter(t => ['expense', 'groceries'].includes(t.type));
+    const expTxs = filtered.filter(t => ['expense', 'groceries', 'rent'].includes(t.type));
     const expense = expTxs.reduce((s, t) => s + parseFloat(t.amount), 0);
     const groceriesTotal = expTxs.filter(t => t.type === 'groceries').reduce((s, t) => s + parseFloat(t.amount), 0);
-    const rentTotal = expTxs.filter(t => t.category === 'House Rent').reduce((s, t) => s + parseFloat(t.amount), 0);
+    const rentTotal = expTxs.filter(t => t.category === 'House Rent' || t.type === 'rent').reduce((s, t) => s + parseFloat(t.amount), 0);
     const txCount = expTxs.length;
 
     document.getElementById('analyticsSummaryRow').innerHTML = `
@@ -109,7 +109,7 @@ async function renderAnalyticsCharts(filteredTxs) {
         }
         const expData = months.map(m => {
             return allTxs
-                .filter(t => t.date.startsWith(m) && ['expense', 'groceries'].includes(t.type))
+                .filter(t => t.date.startsWith(m) && ['expense', 'groceries', 'rent'].includes(t.type))
                 .reduce((s, t) => s + parseFloat(t.amount), 0);
         });
         analyticsBalanceChart = new Chart(ctx1, {
@@ -156,7 +156,7 @@ async function renderAnalyticsCharts(filteredTxs) {
     if (ctx2) {
         if (analyticsTopCatChart) analyticsTopCatChart.destroy();
         const catMap = {};
-        filtered.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
+        filtered.filter(t => ['expense', 'groceries', 'rent'].includes(t.type)).forEach(t => {
             const c = t.category || 'Other';
             catMap[c] = (catMap[c] || 0) + parseFloat(t.amount);
         });
@@ -206,11 +206,11 @@ async function renderAnalyticsCharts(filteredTxs) {
         });
 
         // Use global visible transactions to bypass top period filter
-        allTxs.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
+        allTxs.filter(t => ['expense', 'groceries', 'rent'].includes(t.type)).forEach(t => {
             const m = t.date.slice(0, 7);
             if (monMap[m]) {
                 if (t.type === 'groceries' || t.category === 'Groceries') monMap[m].groc += parseFloat(t.amount);
-                else if (t.category === 'House Rent') monMap[m].rent += parseFloat(t.amount);
+                else if (t.category === 'House Rent' || t.type === 'rent') monMap[m].rent += parseFloat(t.amount);
                 else monMap[m].other += parseFloat(t.amount);
             }
         });
@@ -286,7 +286,7 @@ async function renderAnalyticsCharts(filteredTxs) {
         }
         
         const payerMap = {};
-        filtered.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
+        filtered.filter(t => ['expense', 'groceries', 'rent'].includes(t.type)).forEach(t => {
             const p = normalizePayer(t.payer || 'Unspecified');
             payerMap[p] = (payerMap[p] || 0) + parseFloat(t.amount);
         });

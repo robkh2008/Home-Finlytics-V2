@@ -1,0 +1,84 @@
+/* ==================== css/dashboard.css ==================== */
+
+/* --- Summary Row Cards --- */
+.summary-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+.summary-row .glass-card {
+    text-align: center;
+    padding: 16px 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+.summary-row .summary-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.summary-row .summary-value {
+    font-size: var(--font-size-xl);
+    font-weight: 700;
+    word-break: break-all;
+    overflow-wrap: break-word;
+    hyphens: none;
+    line-height: 1.2;
+}
+
+/* Tighten up on small phones */
+@media (max-width: 400px) {
+    .summary-row {
+        gap: 6px;
+    }
+    .summary-row .glass-card {
+        padding: 12px 4px;
+    }
+    .summary-row .summary-label {
+        font-size: 0.55rem;
+        margin-bottom: 6px;
+    }
+    .summary-row .summary-value {
+        font-size: 16px;
+    }
+}
+
+/* Extra small screens (iPhone SE, etc.) */
+@media (max-width: 360px) {
+    .summary-row {
+        gap: 4px;
+    }
+    .summary-row .glass-card {
+        padding: 10px 3px;
+    }
+    .summary-row .summary-value {
+        font-size: 14px;
+    }
+}
+
+/* Landing action buttons in dashboard */
+.landing-action-btn {
+    transition: opacity 0.2s, transform 0.15s;
+}
+.landing-action-btn:active {
+    opacity: 0.75;
+    transform: scale(0.95);
+}
+
+/* Quick stats row consistency */
+.quick-stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+@media (max-width: 400px) {
+    .quick-stats-row {
+        gap: 6px;
+    }
+}

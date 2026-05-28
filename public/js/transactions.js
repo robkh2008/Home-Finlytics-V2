@@ -156,6 +156,9 @@ function _refreshTransactionListNow() {
             const searchType = t.type === 'rent' ? 'expense' : t.type;
             const catColor = getCategoryColor(t.category || '', searchType);
             const catIcon = getCategoryIcon(t.category || '', searchType);
+            const subIcon = getSubcategoryIcon(t.subcategory, t.category);
+            // Use subcategory icon when available for more variety, fallback to category icon
+            const displayIcon = subIcon || catIcon;
             const isInc = t.type === 'income' || t.type === 'returned';
             const isNeu = t.type === 'settlement';
             const amountColor = isInc ? 'var(--success)' : (isNeu ? 'var(--text-secondary)' : 'var(--danger)');
@@ -167,13 +170,13 @@ function _refreshTransactionListNow() {
                  data-id="${t.id}"
                  style="margin-bottom:6px;padding:12px;cursor:pointer;display:flex;align-items:center;gap:10px;${isSelected ? 'outline:2px solid var(--accent);' : ''}">
                 ${state.bulkSelectMode ? `<input type="checkbox" class="bulk-checkbox" data-id="${t.id}" ${isSelected ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--accent);">` : ''}
-                ${catIcon ? `<span style="font-size:1.4rem;flex-shrink:0;text-align:center;width:24px;">${catIcon}</span>` : `<span style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0;margin:0 7px;"></span>`}
+                ${displayIcon ? `<span style="font-size:1.4rem;flex-shrink:0;text-align:center;width:24px;">${displayIcon}</span>` : `<span style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0;margin:0 7px;"></span>`}
                 <div style="flex:1;" class="tx-info">
                     <div style="display:flex;justify-content:space-between;">
-                        <strong>${escapeHTML(t.category || 'N/A')}</strong>
+                        <strong>${escapeHTML(t.subcategory || t.category || 'N/A')}</strong>
                         <span style="font-weight:700;color:${amountColor};">${amountPrefix}${formatCurrency(t.amount)}</span>
                     </div>
-                    ${t.subcategory ? `<div style="font-size:var(--font-size-sm);color:var(--text-secondary);">${hasGroup ? `<span class="subcat-filter-tag" data-filter="${escapeHTML(group)}:" style="cursor:pointer;color:var(--accent);text-decoration:underline dotted;">Filter by ${escapeHTML(t.subcategory.split(':').slice(1).join(':').trim())}</span>` : `<span>${escapeHTML(t.subcategory)}</span>`}</div>` : ''}
+                    ${t.subcategory ? `<div style="font-size:var(--font-size-sm);color:var(--text-secondary);">${hasGroup ? `<span class="subcat-filter-tag" data-filter="${escapeHTML(group)}:" style="cursor:pointer;color:var(--accent);text-decoration:underline dotted;">${escapeHTML(t.category)} · Filter by ${escapeHTML(t.subcategory.split(':').slice(1).join(':').trim())}</span>` : `<span>${escapeHTML(t.category)}</span>`}</div>` : ''}
                     <div style="font-size:var(--font-size-sm);color:var(--text-tertiary);">
                         ${t.date} · ${t.type}${t.payer ? ' · ' + escapeHTML(t.payer) : ''}${t.paymentMethod ? ' · ' + escapeHTML(t.paymentMethod.toUpperCase()) : ''}
                         ${t.notes ? ` · ${escapeHTML(t.notes.substring(0, 40))}${t.notes.length > 40 ? '...' : ''}` : ''}
@@ -385,7 +388,10 @@ function editTransactionUI(id) {
         
         if (tx.houseId) {
             const houseEl = document.getElementById('addHouse');
-            if (houseEl) houseEl.value = tx.houseId;
+            if (houseEl) {
+                houseEl.value = tx.houseId;
+                houseEl.dispatchEvent(new Event('change')); // update admin house hint
+            }
         }
         
         showToast('Editing transaction...', 'edit');

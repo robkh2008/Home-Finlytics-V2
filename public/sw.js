@@ -1,13 +1,16 @@
 // Change this version number whenever you deploy an update (e.g., to 'finlytics-cache-v2')
-const CACHE_NAME = 'finlytics-cache-v12';
+const CACHE_NAME = 'finlytics-cache-v14';
 
 // Add the core files you want to cache for instant offline loading
+// NOTE: app.js, firebase-sync.js, settings.js are excluded from SW cache
+// to prevent stale-file issues on deploy. They load from network each time.
 const FILES_TO_CACHE = [
   '/',
   '/index.html',
   '/css/themes.css',
   '/css/main.css',
   '/css/components.css',
+  '/css/dashboard.css',
   '/css/receipt.css',
   '/js/categories.js',
   '/js/dashboard.js',
@@ -15,10 +18,7 @@ const FILES_TO_CACHE = [
   '/js/addTransaction.js',
   '/js/reports.js',
   '/js/receiptGenerator.js',
-  '/js/settings.js',
-  '/js/app.js',
   '/js/utils.js',
-  '/js/firebase-sync.js',
   '/data/defaultData.js',
   '/manifest.json'
 ];

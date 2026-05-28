@@ -111,6 +111,8 @@ function refreshAddForm() {
         const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
         houseSelect.innerHTML = '<option value="">Select</option>' +
             houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)}</option>`).join('');
+        // Show hint when an admin residence house is selected (trigger change to update)
+        houseSelect.dispatchEvent(new Event('change'));
     }
 
     updateSplitCheckboxes();

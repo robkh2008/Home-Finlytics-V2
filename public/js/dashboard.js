@@ -1,6 +1,5 @@
 // ==================== js/dashboard.js ====================
-let dashPieChartInstance, dashTrendChartInstance;
-let dashboardTrendPeriod = 6; // default 6 months
+let dashPieChartInstance;
 
 function refreshDashboard() {
     const txs = getVisibleTransactions();
@@ -11,7 +10,7 @@ function refreshDashboard() {
     const expenseTxs = monthTxs.filter(t => ['expense', 'groceries'].includes(t.type));
     const totalExpense = expenseTxs.reduce((s, t) => s + parseFloat(t.amount), 0);
     const groceriesTotal = expenseTxs.filter(t => t.type === 'groceries' || t.category === 'Groceries').reduce((s, t) => s + parseFloat(t.amount), 0);
-    const rentTotal = expenseTxs.filter(t => t.type === 'expense' && t.category === 'House Rent').reduce((s, t) => s + parseFloat(t.amount), 0);
+    const rentTotal = expenseTxs.filter(t => (t.type === 'expense' && t.category === 'House Rent') || t.type === 'rent').reduce((s, t) => s + parseFloat(t.amount), 0);
     
     const txCount = expenseTxs.length;
     const currentDayOfMonth = now.getDate();
@@ -30,20 +29,20 @@ function refreshDashboard() {
     }
 
     document.getElementById('dashboardSummaryRow').innerHTML = `
-        <div class="glass-card" style="text-align:center; padding: 16px 8px; position: relative; overflow: hidden;">
-            <i class="fas fa-wallet" style="position: absolute; top: -10px; right: -15px; font-size: 5rem; opacity: 0.05; color: var(--text-primary);"></i>
-            <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Expenses</div>
-            <div style="font-size:var(--font-size-xl);font-weight:700;color:var(--danger);">${formatCurrency(totalExpense)}</div>
+        <div class="glass-card">
+            <i class="fas fa-wallet" style="position: absolute; top: -8px; right: -12px; font-size: 4.5rem; opacity: 0.12; color: var(--danger);"></i>
+            <div class="summary-label">Expenses</div>
+            <div class="summary-value" style="color:var(--danger);">${formatCurrency(totalExpense)}</div>
         </div>
-        <div class="glass-card" style="text-align:center; padding: 16px 8px; position: relative; overflow: hidden;">
-            <i class="fas fa-calendar-day" style="position: absolute; top: -10px; right: -15px; font-size: 5rem; opacity: 0.05; color: var(--text-primary);"></i>
-            <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Daily Avg</div>
-            <div style="font-size:var(--font-size-xl);font-weight:700;color:var(--text-primary);">${formatCurrency(dailyAvg)}</div>
+        <div class="glass-card">
+            <i class="fas fa-calendar-day" style="position: absolute; top: -8px; right: -12px; font-size: 4.5rem; opacity: 0.10; color: var(--accent);"></i>
+            <div class="summary-label">Daily Avg</div>
+            <div class="summary-value" style="color:var(--text-primary);">${formatCurrency(dailyAvg)}</div>
         </div>
-        <div class="glass-card" style="text-align:center; padding: 16px 8px; position: relative; overflow: hidden;">
-            <i class="fas fa-chart-line" style="position: absolute; top: -10px; right: -15px; font-size: 5rem; opacity: 0.05; color: var(--text-primary);"></i>
-            <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Projected</div>
-            <div style="font-size:var(--font-size-xl);font-weight:700;color:var(--text-primary); display:flex; justify-content:center; align-items:center;">
+        <div class="glass-card">
+            <i class="fas fa-chart-line" style="position: absolute; top: -8px; right: -12px; font-size: 4.5rem; opacity: 0.11; color: var(--warning);"></i>
+            <div class="summary-label">Projected</div>
+            <div class="summary-value" style="color:var(--text-primary); display:flex; justify-content:center; align-items:center; gap:2px;">
                 ${formatCurrency(projectedSpend)}
                 ${projectionIcon}
             </div>
@@ -68,10 +67,10 @@ function refreshDashboard() {
         </div>
     `;
 
-    const recent = txs.filter(t => ['expense', 'groceries'].includes(t.type)).slice(0, 5);
+    const recent = txs.filter(t => ['expense', 'groceries'].includes(t.type)).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
     document.getElementById('recentTxList').innerHTML = recent.map(t => `
         <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--divider);">
-            <div><strong>${escapeHTML(t.category || 'N/A')}</strong><br><small style="color:var(--text-secondary);">${t.date} · ${t.type} ${t.payer ? '· ' + escapeHTML(t.payer) : ''}</small></div>
+            <div><strong>${escapeHTML(t.subcategory || t.category || 'N/A')}</strong><br><small style="color:var(--text-secondary);">${t.subcategory ? escapeHTML(t.category) + ' · ' : ''}${t.date} · ${t.type} ${t.payer ? '· ' + escapeHTML(t.payer) : ''}</small></div>
             <div style="font-weight:600;color:var(--danger);">-${formatCurrency(t.amount)}</div>
         </div>
     `).join('') || '<p style="color:var(--text-tertiary);text-align:center;">No transactions yet</p>';
@@ -79,25 +78,31 @@ function refreshDashboard() {
     refreshBudgetOverview(txs);
     refreshLandingSummary(txs);
     renderDashboardCharts(txs);
-    setupTrendPeriodSelector();
 }
 
 // NEW: Landing summary widget for admin
 function refreshLandingSummary(txs) {
     if (state.userRole !== 'admin') return;
+    const card = document.getElementById('dashboardLandingCard');
     const container = document.getElementById('dashboardLandingSummary');
-    if (!container) return;
+    if (!card || !container) return;
     
     const landingTxs = txs.filter(t => t.subcategory === 'Landing' || (t.category === 'Miscellaneous Expenses' && t.subcategory === 'Landing'));
     const active = landingTxs.filter(t => !t.landingStatus || t.landingStatus === 'active');
     const returned = landingTxs.filter(t => t.landingStatus === 'returned');
     const writtenOff = landingTxs.filter(t => t.landingStatus === 'writeoff');
     
+    // Always show the card for admin, even when empty
+    card.style.display = 'block';
+    container.parentElement.style.display = 'block';
+    
     if (landingTxs.length === 0) {
-        container.style.display = 'none';
+        container.innerHTML = `
+            <h3 class="card-title"><i class="fas fa-hand-holding-usd"></i> Landing (Money Lent)</h3>
+            <p style="color:var(--text-tertiary);text-align:center;padding:12px;">No lending recorded yet. Add a transaction with category "Miscellaneous Expenses" and subcategory "Landing".</p>
+        `;
         return;
     }
-    container.style.display = 'block';
     
     const totalActive = active.reduce((s, t) => s + parseFloat(t.amount), 0);
     const totalReturned = returned.reduce((s, t) => s + parseFloat(t.amount), 0);
@@ -122,61 +127,43 @@ function refreshLandingSummary(txs) {
                 <div style="font-size:0.6rem;color:var(--text-tertiary);">${writtenOff.length} lost</div>
             </div>
         </div>
-        ${active.length > 0 ? `<div style="max-height:120px;overflow-y:auto;">${active.slice(0, 3).map(t => `
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--divider);font-size:0.8rem;">
-                <span>${escapeHTML(t.borrower || 'Unknown')}</span>
-                <span style="font-weight:600;color:var(--warning);">${formatCurrency(t.amount)}</span>
-                <span style="font-size:0.65rem;color:var(--text-tertiary);">${t.date}</span>
+        ${active.length > 0 ? `<div style="max-height:200px;overflow-y:auto;">${active.slice(0, 10).map(t => `
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--divider);font-size:0.8rem;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;color:var(--text-primary);">${escapeHTML(t.borrower || 'Unknown')}</div>
+                    <div style="font-size:0.65rem;color:var(--text-tertiary);">${t.date}</div>
+                </div>
+                <div style="font-weight:700;color:var(--warning);">${formatCurrency(t.amount)}</div>
+                <div style="display:flex;gap:4px;flex-shrink:0;">
+                    <button class="btn btn-xs btn-success landing-action-btn" data-id="${t.id}" data-status="returned" title="Mark as returned" style="padding:3px 8px;font-size:0.65rem;border-radius:6px;background:var(--success);color:#fff;border:none;cursor:pointer;white-space:nowrap;"><i class="fas fa-check"></i> Paid</button>
+                    <button class="btn btn-xs btn-danger landing-action-btn" data-id="${t.id}" data-status="writeoff" title="Mark as written off" style="padding:3px 8px;font-size:0.65rem;border-radius:6px;background:var(--danger);color:#fff;border:none;cursor:pointer;white-space:nowrap;"><i class="fas fa-times"></i> Write Off</button>
+                </div>
             </div>
         `).join('')}</div>` : ''}
     `;
+
+    // Attach event listeners to the new action buttons
+    document.querySelectorAll('.landing-action-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const id = this.dataset.id;
+            const status = this.dataset.status;
+            updateLandingStatus(id, status);
+        });
+    });
 }
 
-// NEW: Period selector setup
-function setupTrendPeriodSelector() {
-    const trendCard = document.querySelector('#dashTrendChart')?.closest('.card');
-    if (!trendCard) return;
+// Quick action: update landing transaction status from dashboard
+function updateLandingStatus(id, newStatus) {
+    const tx = getVisibleTransactions().find(t => t.id === id);
+    if (!tx) return;
 
-    // Update title dynamically
-    const titleEl = trendCard.querySelector('.card-title');
-    if (titleEl) {
-        titleEl.innerHTML = `<i class="fas fa-chart-bar"></i> ${dashboardTrendPeriod}-Month Trend`;
-    }
+    const statusLabel = newStatus === 'returned' ? 'Returned' : 'Written Off';
+    const confirmMsg = `Mark "${tx.borrower || 'Unknown'}" (${formatCurrency(tx.amount)}) as ${statusLabel}?`;
 
-    // Create selector if not present
-    let selector = trendCard.querySelector('.trend-period-selector');
-    if (!selector) {
-        selector = document.createElement('div');
-        selector.className = 'trend-period-selector';
-        selector.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
-        selector.setAttribute('role', 'group');
-        selector.setAttribute('aria-label', 'Trend period selector');
-        trendCard.insertBefore(selector, trendCard.querySelector('.chart-wrap'));
-        
-        const periods = [3, 6, 12];
-        periods.forEach(p => {
-            const isActive = dashboardTrendPeriod === p;
-            const btn = document.createElement('button');
-            btn.className = `btn btn-xs btn-secondary period-btn-trend${isActive ? ' active' : ''}`;
-            btn.textContent = `${p}M`;
-            btn.dataset.period = p;
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-            btn.setAttribute('aria-label', `${p} Months`);
-            btn.addEventListener('click', (e) => {
-                dashboardTrendPeriod = parseInt(e.target.dataset.period, 10);
-                renderDashboardCharts();
-                setupTrendPeriodSelector(); // refresh active state
-            });
-            selector.appendChild(btn);
-        });
-    } else {
-        // Update active state
-        selector.querySelectorAll('.period-btn-trend').forEach(btn => {
-            const isActive = parseInt(btn.dataset.period, 10) === dashboardTrendPeriod;
-            btn.classList.toggle('active', isActive);
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        });
-    }
+    showConfirm('Update Landing Status', confirmMsg, 'hand-holding-usd', () => {
+        updateTransaction(id, { landingStatus: newStatus });
+    });
 }
 
 function refreshBudgetOverview(txs = null) {
@@ -228,8 +215,8 @@ function refreshBudgetOverview(txs = null) {
 }
 
 async function renderDashboardCharts(transactions = null) {
-    // Guard: Skip if chart canvases aren't in the DOM (screen not visible)
-    if (!document.getElementById('dashPieChart') && !document.getElementById('dashTrendChart')) return;
+    // Guard: Skip if chart canvas isn't in the DOM (screen not visible)
+    if (!document.getElementById('dashPieChart')) return;
     
     const isLoaded = await loadChartJs();
     if (!isLoaded || typeof Chart === 'undefined') {
@@ -323,98 +310,4 @@ async function renderDashboardCharts(transactions = null) {
         });
     }
 
-    // --- Trend Chart (dynamic period) ---
-    const months = [];
-    const period = dashboardTrendPeriod;
-    for (let i = period - 1; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-    }
-    const expData = months.map(m => txs.filter(t => t.date.startsWith(m) && ['expense', 'groceries'].includes(t.type)).reduce((s, t) => s + parseFloat(t.amount), 0));
-    
-    const style = getComputedStyle(document.documentElement);
-    const dangerColor = style.getPropertyValue('--danger').trim() || '#ff3b30';
-
-    const ctx2 = document.getElementById('dashTrendChart')?.getContext('2d');
-    if (ctx2) {
-        if (dashTrendChartInstance) dashTrendChartInstance.destroy();
-        const style = getComputedStyle(document.documentElement);
-        const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#aaa';
-        const textTertiary = style.getPropertyValue('--text-tertiary').trim() || '#666';
-        const gridColor = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.06)';
-        const accentColor = style.getPropertyValue('--accent').trim() || '#6C5CE7';
-        
-        // Create gradient for bars
-        const gradient = ctx2.createLinearGradient(0, 0, 0, 400);
-        gradient.addColorStop(0, accentColor + 'cc');
-        gradient.addColorStop(1, accentColor + '33');
-        
-        dashTrendChartInstance = new Chart(ctx2, {
-            type: 'bar',
-            data: {
-                labels: months.map(m => {
-                    const [y, mo] = m.split('-');
-                    return `${['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(mo)]} ${y.slice(2)}`;
-                }),
-                datasets: [
-                    {
-                        label: 'Expenses',
-                        data: expData,
-                        backgroundColor: gradient,
-                        borderRadius: 6,
-                        borderSkipped: false,
-                        hoverBackgroundColor: accentColor
-                    }
-                ]
-            },
-            options: {
-                animation: { 
-                    duration: 500, 
-                    easing: 'easeOutQuart'
-                },
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: style.getPropertyValue('--bg-glass').trim() + 'ee',
-                        titleColor: style.getPropertyValue('--text-primary').trim(),
-                        bodyColor: textSecondary,
-                        borderColor: 'rgba(255,255,255,0.1)',
-                        borderWidth: 1,
-                        cornerRadius: 8,
-                        padding: 10,
-                        callbacks: {
-                            label: ctx => formatCurrency(ctx.raw)
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: {
-                            color: textTertiary,
-                            font: { size: 10, family: 'system-ui, -apple-system, sans-serif' },
-                            maxRotation: 0
-                        },
-                        grid: { display: false },
-                        border: { display: false }
-                    },
-                    y: {
-                        ticks: {
-                            color: textTertiary,
-                            font: { size: 10, family: 'system-ui, -apple-system, sans-serif' },
-                            callback: v => formatCurrency(v),
-                            count: 4
-                        },
-                        grid: {
-                            color: gridColor,
-                            drawBorder: false
-                        },
-                        border: { display: false },
-                        beginAtZero: true
-                    }
-                }
-            }
-        });
-    }
 }

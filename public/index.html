@@ -28,8 +28,9 @@
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/components.css">
     <link rel="stylesheet" href="/css/receipt.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
 
-    <!-- Other CSS (dashboard, transactions, etc.) if needed -->
+    <!-- Other CSS (transactions, etc.) if needed -->
 
     <style media="print">
         /* Analytics Print Styles */
@@ -147,7 +148,6 @@
                     </div>
                     <div class="summary-row" id="dashboardSummaryRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
                     <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Expenses by Category</h3><div class="chart-wrap"><canvas id="dashPieChart" role="img" aria-label="Expenses by Category Doughnut Chart"></canvas></div></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-bar"></i> 6-Month Trend</h3><div class="chart-wrap"><canvas id="dashTrendChart" role="img" aria-label="Expense Trend Bar Chart"></canvas></div></div>
                     <div class="quick-stats-row" id="dashboardQuickStats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
                     <div class="card glass-card"><h3 class="card-title"><i class="fas fa-clock"></i> Recent Transactions</h3><div id="recentTxList"></div></div>
                     <div class="card glass-card admin-only" id="dashboardLandingCard"><div id="dashboardLandingSummary"></div></div>
@@ -197,9 +197,9 @@
                     <div class="card glass-card form-card">
                         <h3 class="card-title"><i class="fas fa-plus-circle"></i> Add Transaction</h3>
                         <form id="addTransactionForm">
-                            <div class="form-group"><label for="addType">Type <span class="required">*</span></label><select id="addType" class="form-select" required><option value="">Select</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option></select></div>
+                            <div class="form-group"><label for="addType">Type <span class="required">*</span></label><select id="addType" class="form-select" required><option value="">Select</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option><option value="rent" class="admin-only">Rent</option></select></div>
                             <div class="form-group" id="addSplitGroup" style="display:none;"><label>Split equally with</label><div id="addSplitCheckboxes" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
-                            <div class="form-group" id="addHouseGroup" style="display:none;"><label for="addHouse">House</label><select id="addHouse" class="form-select"><option value="">Select</option></select></div>
+                            <div class="form-group" id="addHouseGroup" style="display:none;"><label for="addHouse">House</label><select id="addHouse" class="form-select"><option value="">Select</option></select><div id="addHouseAdminHint" style="display:none;font-size:0.7rem;color:var(--accent);margin-top:4px;"><i class="fas fa-lock"></i> Private — visible only to admin</div></div>
                             <div class="form-group" id="addPayerGroup" style="display:none;"><label for="addPayerOverride">Payer</label><select id="addPayerOverride" class="form-select"><option value="">Me</option></select></div>
                             <div class="form-group"><label for="addPaymentMethod">Payment Method</label><select id="addPaymentMethod" class="form-select"><option value="cash">Cash</option><option value="upi">UPI</option><option value="bank">Bank Transfer</option><option value="icici card">ICICI Card</option><option value="scb card">SCB Card</option></select></div>
                             <div class="form-group"><label for="addCategory">Category <span class="required">*</span></label><select id="addCategory" class="form-select" required><option value="">Select Category</option></select></div>
@@ -358,8 +358,12 @@
                         <div id="subcatManagement" style="margin-top:10px;">
                             <h4 style="font-size:var(--font-size-sm);">Subcategories</h4>
                             <div id="subcatList"></div>
-                        <div class="admin-only" style="display:flex;gap:4px;margin-top:6px;">
-                                <input type="text" id="newSubcatName" class="form-input" placeholder="New subcategory" aria-label="New subcategory name">
+                        <div class="admin-only" style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                                <input type="text" id="newSubcatName" class="form-input" placeholder="New subcategory" aria-label="New subcategory name" style="flex:1;min-width:120px;">
+                                <div style="position:relative;display:inline-block;">
+                                    <input type="text" id="newSubcatIcon" class="form-input" placeholder="😀" readonly style="width:44px;text-align:center;cursor:pointer;">
+                                    <div id="subcatEmojiPicker" style="display:none;position:absolute;top:100%;left:0;width:220px;background:var(--card-bg);backdrop-filter:blur(10px);border:1px solid var(--divider);border-radius:8px;padding:6px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,0.2);flex-wrap:wrap;gap:3px;max-height:140px;overflow-y:auto;"></div>
+                                </div>
                                 <button id="addSubcatBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
                             </div>
                         </div>
@@ -381,7 +385,7 @@
                         </div>
                     </div>
                         <div id="settingsHouseList"></div>
-                        <div class="admin-only" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"><input type="text" id="newHouseNo" class="form-input" placeholder="No." style="width:60px;" aria-label="New house number"><input type="text" id="newHouseAddress" class="form-input" placeholder="Address" style="flex:1;" aria-label="New house address"><input type="text" id="newHouseTenant" class="form-input" placeholder="Tenant" style="width:80px;" aria-label="New house tenant"><input type="text" id="newHouseOwner" class="form-input" placeholder="Owner" style="width:80px;" aria-label="New house owner"><input type="number" id="newHouseRent" class="form-input" placeholder="Rent ₹" style="width:80px;" aria-label="New house rent"><button id="addHouseBtn" class="btn btn-primary btn-xs">Add</button></div>
+                        <div class="admin-only" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"><input type="text" id="newHouseNo" class="form-input" placeholder="No." style="width:60px;" aria-label="New house number"><input type="text" id="newHouseAddress" class="form-input" placeholder="Address" style="flex:1;" aria-label="New house address"><input type="text" id="newHouseTenant" class="form-input" placeholder="Tenant" style="width:80px;" aria-label="New house tenant"><input type="text" id="newHouseOwner" class="form-input" placeholder="Owner" style="width:80px;" aria-label="New house owner"><input type="number" id="newHouseRent" class="form-input" placeholder="Rent ₹" style="width:80px;" aria-label="New house rent"><label style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-secondary);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="newHouseAdminResidence" style="accent-color:var(--accent);"> My Residence</label><button id="addHouseBtn" class="btn btn-primary btn-xs">Add</button></div>
                     </div>
                     <!-- Manage Payers -->
                     <div class="card glass-card settings-card admin-only">

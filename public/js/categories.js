@@ -10,6 +10,9 @@ function refreshAddFormCategories() {
                 catSelect.innerHTML = '<option value="Returned" selected>Returned</option>';
             } else if (type === 'settlement') {
                 catSelect.innerHTML = '<option value="Settlement" selected>Settlement</option>';
+            } else if (type === 'rent') {
+                // Auto-select House Rent category for rent type
+                catSelect.innerHTML = '<option value="">Select</option><option value="House Rent" selected>House Rent</option>';
             } else {
                 // Determine the source category list. For non-admin users
                 // with no type selected, default to groceries (what they can see).

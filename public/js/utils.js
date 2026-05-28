@@ -43,6 +43,65 @@ function getCategoryIcon(catName, type) {
     return found?.icon ? escapeHTML(found.icon) : '📁';
 }
 
+// Subcategory icons — unique per subcategory name to avoid repetition
+const SUBCATEGORY_ICONS = {
+    // House Rent
+    'House Rent': '🏠', 'Water Bill': '🚿', 'Electric Bill': '⚡', 'Motor Bill': '🏍️',
+    // Groceries
+    'Vegetables': '🥦', 'Fruits': '🍎', 'Fish': '🐟', 'Drinking Water': '🚰',
+    'Meat': '🥩', 'Dairy & Eggs': '🥛', 'Grains': '🌾', 'Snacks': '🍿',
+    'Beverages': '🥤', 'Pantry & Spices': '🧂', 'Household': '🧹',
+    // Food
+    'Dining Out': '🍽️', 'Delivery & Takeout': '📦', 'Cafes & Coffee': '☕',
+    'Work Lunch': '🥪', 'Fast Food': '🍔',
+    // Transport
+    'Fuel': '⛽', 'Public Transport': '🚌', 'Uber': '🚗', 'Bike & Car Maintenance': '🔧',
+    'Parking': '🅿️', 'Bike & Car Wash': '🧽', 'Vehicle Insurance': '🛡️',
+    'Tolls': '🛣️', 'Flights': '✈️',
+    // Entertainment
+    'Movies': '🎬', 'Games': '🎮', 'Events': '🎪', 'Subscriptions': '📺', 'Hobbies': '🎨',
+    // Utilities
+    'Electricity': '💡', 'Water': '💧', 'Internet': '🌐', 'Gas': '🔥',
+    'Phone Bill': '📱', 'Trash/Garbage': '🗑️',
+    // Shopping
+    'Clothing': '👕', 'Electronics': '💻', 'Home Appliances': '🔌',
+    'Furniture & Decor': '🛋️', 'Kitchen Appliances': '🍳', 'Gifts': '🎁', 'Accessories': '⌚',
+    // Healthcare
+    'Doctor': '🩺', 'Medicine': '💊', 'Health Insurance': '🏥', 'Gym': '🏋️',
+    'Dental': '🦷', 'Vision': '👓',
+    // Education
+    'Tuition': '📖', 'Books': '📚', 'Courses': '📝', 'Admission fees': '🎓', 'Stationery': '✏️',
+    // Personal Care
+    'Haircut': '💇', 'Cosmetics': '💄', 'Hair Care': '🧴', 'Body Care': '🧼',
+    'Skin Care': '✨', 'Spa': '🧖',
+    // Debt & Loans
+    'Credit Card': '💳', 'EMI': '📋', 'Personal Loan': '💰', 'Home Loan': '🔑',
+    'Car Loan': '🚙', 'Business Loan': '💼',
+    // Marup
+    'Rohen': '👥', 'Echan': '🤝', 'Abe Phanek': '🗣️',
+    // Miscellaneous
+    'Other Expenses': '📄', 'Taxes': '🏛️', 'Home Transfer': '🚚',
+    'Donations': '❤️', 'Fines': '⚠️', 'Landing': '📤',
+};
+
+function getSubcategoryIcon(subcatName, catName) {
+    if (!subcatName) return null;
+    // Handle grouped subcategories (e.g. "Produce: Vegetables")
+    const cleanName = subcatName.includes(':') ? subcatName.split(':').slice(1).join(':').trim() : subcatName.trim();
+    // Check stored subcategory icons first (user-customized icons from settings)
+    if (catName && state.categories) {
+        for (const type of ['expense', 'groceries']) {
+            const cats = state.categories[type] ? Object.values(state.categories[type]).filter(Boolean) : [];
+            const cat = cats.find(c => c.name === catName);
+            if (cat && cat.subcategoryIcons && cat.subcategoryIcons[cleanName]) {
+                return cat.subcategoryIcons[cleanName];
+            }
+        }
+    }
+    // Fall back to the hardcoded map
+    return SUBCATEGORY_ICONS[cleanName] || null;
+}
+
 function showToast(msg, icon = 'info-circle') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
@@ -168,16 +227,18 @@ function getStringColor(str) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
     
-    // Modern, pleasing palette — cohesive pastels for dark theme, rich tones for light theme
+    // High-contrast palette — hues spaced evenly across the colour wheel
     const darkThemeColors = [
-        '#6C5CE7', '#00B894', '#FDCB6E', '#E17055', '#A29BFE',
-        '#55EFC4', '#FAB1A0', '#74B9FF', '#FF7675', '#81ECEC',
-        '#DFE6E9', '#FFEAA7', '#B8E994', '#D6A2E8', '#78C2C2'
+        '#FF6B6B', '#00B894', '#0984E3', '#FDCB6E', '#6C5CE7',
+        '#00CEC9', '#FD79A8', '#55EFC4', '#FF9FF3', '#E17055',
+        '#74B9FF', '#1DD1A1', '#FF6348', '#A29BFE', '#48DBFB',
+        '#FAB1A0', '#54A0FF', '#FF9F43', '#5F27CD', '#00D2D3'
     ];
     const lightThemeColors = [
-        '#5B4CC4', '#00856A', '#D4A017', '#C0392B', '#7C6FF7',
-        '#00A878', '#E07B6B', '#2980B9', '#D64545', '#17A2A2',
-        '#636E72', '#BF9A2A', '#5A9E3E', '#8E44AD', '#3D8B8B'
+        '#D63031', '#00A878', '#0652DD', '#F39C12', '#5B4CC4',
+        '#00897B', '#E84393', '#00B894', '#6C3483', '#D35400',
+        '#0984E3', '#00695C', '#C0392B', '#7C6FF7', '#00CEC9',
+        '#E07B6B', '#1B6EC2', '#E67E22', '#4A148C', '#00838F'
     ];
     
     const colors = state.theme === 'light' ? lightThemeColors : darkThemeColors;

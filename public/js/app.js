@@ -531,6 +531,14 @@ function bindTransactionEvents() {
         refreshAddForm();
         updateSubcategoryDropdown();
     });
+    // Show hint when admin residence house is selected in rent form
+    document.getElementById('addHouse')?.addEventListener('change', function() {
+        const hint = document.getElementById('addHouseAdminHint');
+        if (!hint) return;
+        const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
+        const selectedHouse = houses.find(h => h.id === this.value);
+        hint.style.display = (selectedHouse && selectedHouse.isAdminHouse) ? 'block' : 'none';
+    });
     document.getElementById('addTransactionForm')?.addEventListener('submit', function(e) {
         e.preventDefault();
         const editId = this.dataset.editId;
@@ -547,6 +555,8 @@ function bindTransactionEvents() {
             payer: document.getElementById('addPayerOverride')?.value || (state.currentUser ? state.currentUser.name : 'Unknown'),
             paymentMethod: document.getElementById('addPaymentMethod')?.value || 'cash',
             splitWith: splitWith.length > 0 ? splitWith : null,
+            // House/Rent tracking
+            houseId: document.getElementById('addHouse')?.value || '',
             // Landing tracking fields
             borrower: document.getElementById('addBorrower')?.value || '',
             landingStatus: document.getElementById('addLandingStatus')?.value || 'active',
@@ -732,6 +742,7 @@ function bindSettingsEvents() {
         const type = document.getElementById('settingsCatType').value;
         const catName = document.getElementById('settingsCategorySelect').value;
         const subName = document.getElementById('newSubcatName').value.trim();
+        const subIcon = document.getElementById('newSubcatIcon')?.value || '';
         if (!catName || !subName) return showToast('Select category and enter subcategory name', 'exclamation-triangle');
         
         // Find and update the category in ALL type collections (sync Groceries across expense + groceries)
@@ -742,8 +753,10 @@ function bindSettingsEvents() {
             const cat = cats.find(c => c.name === catName);
             if (cat) {
                 if (!cat.subcategories) cat.subcategories = [];
+                if (!cat.subcategoryIcons) cat.subcategoryIcons = {};
                 if (!cat.subcategories.some(s => s.toLowerCase() === subName.toLowerCase())) {
                     cat.subcategories.push(subName);
+                    if (subIcon) cat.subcategoryIcons[subName] = subIcon;
                     found = true;
                 }
             }
@@ -753,6 +766,7 @@ function bindSettingsEvents() {
         saveState();
         refreshSubcategoryList(type);
         document.getElementById('newSubcatName').value = '';
+        if (document.getElementById('newSubcatIcon')) document.getElementById('newSubcatIcon').value = '';
         showToast('Subcategory added!', 'check-circle');
     });
 
@@ -842,6 +856,30 @@ function bindSettingsEvents() {
         iconWrap.appendChild(iconInput);
         iconWrap.appendChild(picker);
         newCatColorInput.parentNode.insertBefore(iconWrap, newCatColorInput);
+    }
+
+    // Subcategory emoji picker initialization
+    const subcatIconInput = document.getElementById('newSubcatIcon');
+    const subcatPicker = document.getElementById('subcatEmojiPicker');
+    if (subcatIconInput && subcatPicker) {
+        const subcatEmojis = ["🥦","🍎","🐟","🥩","🥛","🌾","🍿","🥤","🧂","🧹","🍽️","🍔","🥪","☕","🚌","🚗","⛽","✈️","🅿️","🔧","🧽","🛡️","🎬","🎮","🎪","📺","🎨","💡","💧","🌐","🔥","📱","🗑️","👕","💻","🛋️","🍳","🎁","⌚","🩺","💊","🏋️","🦷","👓","📖","📚","🎓","✏️","💇","💄","🧴","🧼","✨","🧖","💳","💰","🔑","🚙","💼","👥","🤝","🗣️","📄","🏛️","🚚","❤️","⚠️","📤","🏠","🚿","⚡","🏍️"];
+        subcatEmojis.forEach(em => {
+            const span = document.createElement('span');
+            span.textContent = em;
+            span.style.cssText = 'font-size:1.4rem;cursor:pointer;padding:4px;border-radius:4px;transition:background 0.2s;display:inline-block;line-height:1;';
+            span.onmouseover = () => span.style.background = 'rgba(128,128,128,0.2)';
+            span.onmouseout = () => span.style.background = 'transparent';
+            span.onclick = () => { subcatIconInput.value = em; subcatPicker.style.display = 'none'; };
+            subcatPicker.appendChild(span);
+        });
+        subcatIconInput.onclick = () => {
+            subcatPicker.style.display = subcatPicker.style.display === 'none' ? 'flex' : 'none';
+        };
+        document.addEventListener('click', (e) => {
+            if (e.target !== subcatIconInput && !subcatPicker.contains(e.target)) {
+                subcatPicker.style.display = 'none';
+            }
+        });
     }
 
     document.getElementById('addCatBtn')?.addEventListener('click', function() {
@@ -964,11 +1002,14 @@ function bindSettingsEvents() {
             tenant: document.getElementById('newHouseTenant').value.trim(),
             owner: document.getElementById('newHouseOwner').value.trim(),
             rent: parseFloat(document.getElementById('newHouseRent').value) || 0,
+            isAdminHouse: !!document.getElementById('newHouseAdminResidence')?.checked,
         };
         if (!h.houseNo || !h.tenant) { showToast('Fill House No. and Tenant', 'exclamation-triangle'); return; }
         state.houses.push(h);
         saveState();
         ['newHouseNo', 'newHouseAddress', 'newHouseTenant', 'newHouseOwner', 'newHouseRent'].forEach(id => document.getElementById(id).value = '');
+        const adminCb = document.getElementById('newHouseAdminResidence');
+        if (adminCb) adminCb.checked = false;
         refreshSettings();
         refreshAll();
         showToast('House added!', 'home');
@@ -1558,12 +1599,22 @@ window.handleAuthStateChanged = async (user) => {
         const isNewUser = previousUid !== user.uid;
         state.currentUser = { uid: user.uid, name: name, email: user.email };
         
+        // Auto-add user's display name to payer list so it appears in manage payers
+        if (!state.payers) state.payers = [];
+        const payersArr = Array.isArray(state.payers) ? state.payers : Object.values(state.payers);
+        if (name && !payersArr.some(p => p.toLowerCase() === name.toLowerCase())) {
+            state.payers.push(name);
+            // Sync to Firebase if admin and name is new
+            if (typeof saveState === 'function') saveState();
+        }
+        
         // Fetch role from Firebase dynamically
         if (typeof window.checkUserRole === 'function') {
             state.userRole = await window.checkUserRole(user);
         } else {
             state.userRole = 'user';
         }
+        const roleChanged = (previousRole !== state.userRole);
         
         // CRITICAL FIX: Always attach Firebase listeners on every auth resolution.
         // Previously only attached on isNewUser || roleChanged, which meant on page
