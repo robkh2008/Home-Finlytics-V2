@@ -17,11 +17,16 @@ function refreshReceiptForm() {
         loadHtml2Canvas().catch(() => {});
     }
     
-    // FIX: Use CSS class to hide instead of inline style
+    // FIX: Use CSS class to hide instead of inline style — but only if a receipt isn't currently showing
     const previewCard = document.getElementById('receiptPreviewCard');
     if (previewCard) {
-        previewCard.classList.add('hidden');
-        previewCard.style.display = '';
+        // Don't hide the preview if a receipt has been generated (user is viewing it)
+        const paper = document.getElementById('receiptPaper');
+        const hasGeneratedReceipt = paper && paper.innerHTML.trim().length > 0 && previewCard.style.display !== 'none';
+        if (!hasGeneratedReceipt) {
+            previewCard.classList.add('hidden');
+            previewCard.style.display = '';
+        }
     }
     
     // FIX: Update both total preview elements
@@ -222,18 +227,36 @@ function printReceiptWithClass() {
         previewCard.style.display = 'block';
     }
     
+    // FIX: On iOS Safari, the print dialog is async and afterprint fires too aggressively.
+    // Use a flag to prevent premature cleanup.
+    window._isPrintingReceipt = true;
+    
     document.body.classList.add('printing-receipt');
     // Use requestAnimationFrame to ensure DOM updates before print
     requestAnimationFrame(() => {
         setTimeout(() => {
             window.print();
-        }, 200);
+            // On iOS, afterprint fires immediately when print dialog opens.
+            // Keep the printing class until user explicitly dismisses.
+            // We'll remove it on the next page interaction.
+        }, 300);
     });
 }
 
-// FIX: Ensure cleanup happens reliably
+// FIX: Ensure cleanup happens reliably — but don't hide the receipt preview
 window.addEventListener('afterprint', () => {
     document.body.classList.remove('printing-receipt');
+    window._isPrintingReceipt = false;
+});
+
+// Also handle the case where user navigates away after printing
+// by cleaning up the class
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && window._isPrintingReceipt) {
+        // User returned from print dialog — keep preview visible
+        window._isPrintingReceipt = false;
+        document.body.classList.remove('printing-receipt');
+    }
 });
 
 async function loadHtml2Canvas() {
