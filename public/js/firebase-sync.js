@@ -3,7 +3,7 @@
 // 1. Import Firebase functions from the npm package
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, update, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, deleteUser, GoogleAuthProvider, signInWithPopup, linkWithPopup, unlink } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 
 // 2. Paste YOUR config object here
@@ -28,6 +28,9 @@ let unsubscribePrivateTxs = null;
 let unsubscribeConnectionListener = null;
 
 // 6. Production Sync Functions
+// Track writes to prevent echo-chamber re-read
+let _pendingWriteIds = new Set();
+
 export function saveStateToFirebase(appState) {
     if (!auth.currentUser) return Promise.resolve(); // Prevent writing if not authenticated
 
@@ -46,13 +49,11 @@ export function saveStateToFirebase(appState) {
                     updates[`/appState/transactions_public/${tx.id}`] = tx;
                     currentPublicIds.add(tx.id);
                 } else if (tx.type === 'expense') {
-                    if (appState.userRole === 'admin') {
-                        updates[`/appState/transactions_private/${tx.id}`] = tx;
-                    }
+                    // All expense transactions written to private node (admin-only visibility)
+                    updates[`/appState/transactions_private/${tx.id}`] = tx;
                     currentPrivateIds.add(tx.id);
                 }
                 // Note: 'income' type transactions are not currently synced
-                // Add a case here if income tracking is enabled in the future
             }
         });
     }
@@ -63,7 +64,7 @@ export function saveStateToFirebase(appState) {
             if (!currentPublicIds.has(id)) updates[`/appState/transactions_public/${id}`] = null;
         });
     }
-    if (appState.userRole === 'admin' && window._firebasePrivateCache) {
+    if (window._firebasePrivateCache) {
         Object.keys(window._firebasePrivateCache).forEach(id => {
             if (!currentPrivateIds.has(id)) updates[`/appState/transactions_private/${id}`] = null;
         });
@@ -77,29 +78,52 @@ export function saveStateToFirebase(appState) {
     }
 
     // Non-transactional data should only be written by admin.
+    // OPTIMIZATION: Only write settings that actually changed (not all on every save)
     if (appState.userRole === 'admin') {
-        updates['/appState/houses'] = housesObj;
-        updates['/appState/categories'] = appState.categories || {};
-        updates['/appState/budgets'] = appState.budgets || {};
+        if (!window._lastWrittenSettings || JSON.stringify(window._lastWrittenSettings.houses) !== JSON.stringify(housesObj)) {
+            updates['/appState/houses'] = housesObj;
+        }
+        if (!window._lastWrittenSettings || JSON.stringify(window._lastWrittenSettings.categories) !== JSON.stringify(appState.categories || {})) {
+            updates['/appState/categories'] = appState.categories || {};
+        }
+        if (!window._lastWrittenSettings || JSON.stringify(window._lastWrittenSettings.budgets) !== JSON.stringify(appState.budgets || {})) {
+            updates['/appState/budgets'] = appState.budgets || {};
+        }
         updates['/appState/recurringTemplates'] = appState.recurringTemplates || [];
         updates['/appState/payers'] = appState.payers || [];
         updates['/appState/currency'] = appState.currency || '₹';
         updates['/appState/electricRate'] = appState.electricRate || 8;
         updates['/appState/transactions'] = null; // WIPE LEGACY DATA
+        
+        // Remember what we wrote
+        window._lastWrittenSettings = {
+            houses: JSON.parse(JSON.stringify(housesObj)),
+            categories: JSON.parse(JSON.stringify(appState.categories || {})),
+            budgets: JSON.parse(JSON.stringify(appState.budgets || {}))
+        };
+    }
+
+    // Generate a unique write ID for echo prevention (more reliable than timestamps)
+    const writeId = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    _pendingWriteIds.add(writeId);
+    // Clean up old write IDs (keep last 20)
+    if (_pendingWriteIds.size > 20) {
+        const arr = Array.from(_pendingWriteIds);
+        _pendingWriteIds = new Set(arr.slice(arr.length - 20));
     }
     
-    updates['/appState/lastUpdated'] = appState.lastUpdated || Date.now();
+    updates['/appState/lastUpdated'] = Date.now();
+    updates['/appState/lastWriteId'] = writeId;
 
-    // Track what we wrote to prevent echo-chamber re-read
-    const writeTimestamp = updates['/appState/lastUpdated'];
-
-    // Skip write if nothing to update
-    if (Object.keys(updates).length === 0) return Promise.resolve();
+    // Skip write if nothing to update (only lastUpdated/writeId)
+    if (Object.keys(updates).length <= 2) return Promise.resolve();
 
     return update(ref(database), updates).then(() => {
-        // Remember the timestamp we just pushed so onFirebaseDataReceived can skip it
-        window._lastWrittenTimestamp = writeTimestamp;
+        // Keep writeId in pending set for echo prevention
+        window._firebasePendingWriteIds = _pendingWriteIds;
     }).catch((error) => {
+        _pendingWriteIds.delete(writeId);
+        window._firebasePendingWriteIds = _pendingWriteIds;
         console.error("Firebase save error: ", error.message);
         throw error;
     });
@@ -130,17 +154,24 @@ export function listenToFirebaseState(onDataReceived, userRole) {
                 return dateB - dateA;
             });
 
-            if (otherState.houses) {
-                fullState.houses = Object.values(otherState.houses);
+            if (otherState.houses && typeof otherState.houses === 'object' && !Array.isArray(otherState.houses)) {
+                fullState.houses = Object.values(otherState.houses).filter(Boolean);
+            } else if (Array.isArray(otherState.houses)) {
+                fullState.houses = otherState.houses;
             } else {
                 fullState.houses = [];
             }
+            
+            // Include lastWriteId for echo prevention
+            fullState._cloudWriteId = otherState.lastWriteId || null;
+            fullState._cloudLastUpdated = otherState.lastUpdated || 0;
+            
             onDataReceived(fullState);
         }, 150); // 150ms debounce for listener merges
     };
 
     // Listen to individual nodes instead of root 'appState' to avoid PERMISSION_DENIED for non-admins
-    const settingsNodes = ['houses', 'categories', 'budgets', 'recurringTemplates', 'payers', 'currency', 'electricRate', 'lastUpdated'];
+    const settingsNodes = ['houses', 'categories', 'budgets', 'recurringTemplates', 'payers', 'currency', 'electricRate', 'lastUpdated', 'lastWriteId'];
     settingsNodes.forEach(node => {
         const nodeRef = ref(database, `appState/${node}`);
         const unsub = onValue(nodeRef, (snapshot) => {
@@ -158,15 +189,14 @@ export function listenToFirebaseState(onDataReceived, userRole) {
         mergeAndCallback();
     });
 
-    // Listener for private transactions (admin only)
-    if (userRole === 'admin') {
-        const privateTxsRef = ref(database, 'appState/transactions_private');
-        unsubscribePrivateTxs = onValue(privateTxsRef, (snapshot) => {
-            privateCache = snapshot.val() || {};
-            window._firebasePrivateCache = privateCache;
-            mergeAndCallback();
-        });
-    }
+    // Listener for private transactions (admin only, but also anyone who might have been admin)
+    // Always listen to private node — Firebase rules will restrict access server-side
+    const privateTxsRef = ref(database, 'appState/transactions_private');
+    unsubscribePrivateTxs = onValue(privateTxsRef, (snapshot) => {
+        privateCache = snapshot.val() || {};
+        window._firebasePrivateCache = privateCache;
+        mergeAndCallback();
+    });
 }
 
 export function detachFirebaseListeners() {
@@ -206,12 +236,72 @@ export async function checkUserRole(user) {
     } catch (e) { return 'user'; }
 }
 
+// NEW: Load user profile from Firebase
+export async function loadUserProfile(user) {
+    if (!user) return null;
+    try {
+        const snap = await get(ref(database, `profiles/${user.uid}`));
+        return snap.val() || null;
+    } catch (e) { return null; }
+}
+
+// NEW: Save user profile to Firebase
+export async function saveUserProfile(user, profileData) {
+    if (!user) return Promise.reject('Not authenticated');
+    try {
+        await update(ref(database, `profiles/${user.uid}`), profileData);
+        return true;
+    } catch (e) {
+        console.error('Profile save error:', e.message);
+        throw e;
+    }
+}
+
+// NEW: Link Google account to current email/password account
+export async function linkGoogleAccount() {
+    if (!auth.currentUser) throw new Error('Not logged in');
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    try {
+        const result = await linkWithPopup(auth.currentUser, provider);
+        return result;
+    } catch (e) {
+        console.error('Link Google error:', e.message);
+        throw e;
+    }
+}
+
+// NEW: Unlink Google provider from current account
+export async function unlinkGoogleAccount() {
+    if (!auth.currentUser) throw new Error('Not logged in');
+    try {
+        await unlink(auth.currentUser, GoogleAuthProvider.PROVIDER_ID);
+        return true;
+    } catch (e) {
+        console.error('Unlink Google error:', e.message);
+        throw e;
+    }
+}
+
+// NEW: Check if user has Google linked
+export function hasGoogleLinked() {
+    if (!auth.currentUser) return false;
+    return auth.currentUser.providerData.some(
+        p => p.providerId === GoogleAuthProvider.PROVIDER_ID
+    );
+}
+
 // 7. Expose functions globally so storage.js can use them
 window.saveStateToFirebase = saveStateToFirebase;
 window.listenToFirebaseState = listenToFirebaseState;
 window.detachFirebaseListeners = detachFirebaseListeners;
 window.listenToConnectionStatus = listenToConnectionStatus;
 window.checkUserRole = checkUserRole;
+window.loadUserProfile = loadUserProfile;
+window.saveUserProfile = saveUserProfile;
+window.linkGoogleAccount = linkGoogleAccount;
+window.unlinkGoogleAccount = unlinkGoogleAccount;
+window.hasGoogleLinked = hasGoogleLinked;
 
 // 8. Auth logic: Only sync if logged in
 window.showLoginUI = (isMandatory = false) => {

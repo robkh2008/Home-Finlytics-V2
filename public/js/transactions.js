@@ -124,7 +124,18 @@ function getFilteredTransactions() {
 }
 
 function refreshTransactionList() {
-    // Ensure filter categories are up‑to‑date
+    // OPTIMIZATION: Throttle rapid successive calls (e.g., from keystroke events)
+    if (refreshTransactionList._throttle) {
+        clearTimeout(refreshTransactionList._throttle);
+    }
+    refreshTransactionList._throttle = setTimeout(() => {
+        refreshTransactionList._throttle = null;
+        _refreshTransactionListNow();
+    }, 100); // 100ms throttle for filter keystrokes
+}
+
+function _refreshTransactionListNow() {
+    // Ensure filter categories are up‑to‑date (only when needed)
     populateFilterCategories();
     populateFilterSubcategories();
     populateFilterPayers();
@@ -132,19 +143,27 @@ function refreshTransactionList() {
     const txs = getFilteredTransactions();
     const container = document.getElementById('transactionList');
     const empty = document.getElementById('txEmptyState');
+    if (!container || !empty) return;
+    
     if (txs.length === 0) {
         container.innerHTML = '';
         empty.style.display = 'block';
     } else {
         empty.style.display = 'none';
-        container.innerHTML = txs.map(t => {
+        // OPTIMIZATION: Build HTML as array join (faster than string concatenation)
+        const fragments = txs.map(t => {
             const isSelected = state.selectedTxIds.has(t.id);
             const searchType = t.type === 'rent' ? 'expense' : t.type;
             const catColor = getCategoryColor(t.category || '', searchType);
             const catIcon = getCategoryIcon(t.category || '', searchType);
+            const isInc = t.type === 'income' || t.type === 'returned';
+            const isNeu = t.type === 'settlement';
+            const amountColor = isInc ? 'var(--success)' : (isNeu ? 'var(--text-secondary)' : 'var(--danger)');
+            const amountPrefix = isInc ? '+' : (isNeu ? '↺ ' : '-');
+            const hasGroup = t.subcategory && t.subcategory.includes(':');
+            const group = hasGroup ? t.subcategory.split(':')[0].trim() : '';
             
-            return `
-            <div class="tx-row glass-card ${state.bulkSelectMode ? 'bulk-mode' : ''} ${isSelected ? 'selected' : ''}"
+            return `<div class="tx-row glass-card ${state.bulkSelectMode ? 'bulk-mode' : ''} ${isSelected ? 'selected' : ''}"
                  data-id="${t.id}"
                  style="margin-bottom:6px;padding:12px;cursor:pointer;display:flex;align-items:center;gap:10px;${isSelected ? 'outline:2px solid var(--accent);' : ''}">
                 ${state.bulkSelectMode ? `<input type="checkbox" class="bulk-checkbox" data-id="${t.id}" ${isSelected ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--accent);">` : ''}
@@ -152,44 +171,27 @@ function refreshTransactionList() {
                 <div style="flex:1;" class="tx-info">
                     <div style="display:flex;justify-content:space-between;">
                         <strong>${escapeHTML(t.category || 'N/A')}</strong>
-                        ${(() => {
-                            const isInc = t.type === 'income' || t.type === 'returned';
-                            const isNeu = t.type === 'settlement';
-                            return `<span style="font-weight:700;color:${isInc ? 'var(--success)' : (isNeu ? 'var(--text-secondary)' : 'var(--danger)')};">
-                                ${isInc ? '+' : (isNeu ? '↺ ' : '-')}${formatCurrency(t.amount)}
-                            </span>`;
-                        })()}
+                        <span style="font-weight:700;color:${amountColor};">${amountPrefix}${formatCurrency(t.amount)}</span>
                     </div>
-                    ${t.subcategory ? (() => {
-                        const hasGroup = t.subcategory.includes(':');
-                        const group = hasGroup ? t.subcategory.split(':')[0].trim() : '';
-                        const name = hasGroup ? t.subcategory.split(':').slice(1).join(':').trim() : t.subcategory;
-                        const badgeColor = hasGroup ? getStringColor(group) : '';
-                        const bgStyle = hasGroup ? `background:${hexToRgba(badgeColor, 0.15)};border:1px solid ${hexToRgba(badgeColor, 0.3)};color:${badgeColor};` : 'background:var(--bg-secondary);border:1px solid var(--divider);color:var(--text-secondary);';
-                        return `<div style="margin:4px 0;">
-                            <span class="subcat-badge" data-cat="${escapeHTML(t.category)}" data-subcat="${escapeHTML(t.subcategory)}" style="${bgStyle}padding:2px 8px;border-radius:12px;font-size:0.7rem;display:inline-block;cursor:pointer;" title="Filter by ${escapeHTML(t.subcategory)}">
-                                ${hasGroup ? `<strong>${escapeHTML(group)}</strong>: ${escapeHTML(name)}` : escapeHTML(name)}
-                            </span>
-                        </div>`;
-                    })() : ''}
-                    <small style="color:var(--text-secondary);">
-                        ${t.date} · ${t.type} ${t.payer ? `· <span style="color:${getStringColor(t.payer)};font-weight:500;">${escapeHTML(t.payer)}</span>${t.splitWith ? ` (Split with ${escapeHTML(Array.isArray(t.splitWith) ? t.splitWith.join(', ') : t.splitWith)})` : ''}` : ''} ${t.paymentMethod ? '· ' + escapeHTML(t.paymentMethod.toUpperCase()) : ''}
-                    </small>
-                    ${t.notes ? `<div style="font-size:0.7rem;color:var(--text-tertiary);">${escapeHTML(t.notes)}</div>` : ''}
-                    ${t.receiptNo ? `<div style="font-size:0.65rem;color:var(--accent);">Receipt: ${escapeHTML(t.receiptNo)}</div>` : ''}
+                    ${t.subcategory ? `<div style="font-size:var(--font-size-sm);color:var(--text-secondary);">${hasGroup ? `<span class="subcat-filter-tag" data-filter="${escapeHTML(group)}:" style="cursor:pointer;color:var(--accent);text-decoration:underline dotted;">Filter by ${escapeHTML(t.subcategory.split(':').slice(1).join(':').trim())}</span>` : `<span>${escapeHTML(t.subcategory)}</span>`}</div>` : ''}
+                    <div style="font-size:var(--font-size-sm);color:var(--text-tertiary);">
+                        ${t.date} · ${t.type}${t.payer ? ' · ' + escapeHTML(t.payer) : ''}${t.paymentMethod ? ' · ' + escapeHTML(t.paymentMethod.toUpperCase()) : ''}
+                        ${t.notes ? ` · ${escapeHTML(t.notes.substring(0, 40))}${t.notes.length > 40 ? '...' : ''}` : ''}
+                    </div>
                 </div>
-                ${!state.bulkSelectMode ? `
-                <div class="tx-swipe-actions">
+                ${state.bulkSelectMode ? '' : `<div class="tx-swipe-actions">
                     <button class="tx-swipe-btn edit" data-action="edit" data-id="${t.id}" title="Edit"><i class="fas fa-edit"></i></button>
                     <button class="tx-swipe-btn copy" data-action="copy" data-id="${t.id}" title="Copy"><i class="fas fa-copy"></i></button>
                     <button class="tx-swipe-btn delete" data-action="delete" data-id="${t.id}" title="Delete"><i class="fas fa-trash"></i></button>
-                </div>` : ''}
+                </div>`}
             </div>`;
-        }).join('');
-
-        // Attach events
+        });
+        container.innerHTML = fragments.join('');
+        
+        // Attach events to the new rows
         attachTransactionEvents(container);
     }
+    
     updateBulkBar();
 
     // Update Floating Clear Filters Button Visibility

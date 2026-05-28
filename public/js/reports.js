@@ -64,14 +64,34 @@ async function renderAnalyticsCharts(filteredTxs) {
     const filtered = filteredTxs || getVisibleTransactions();
     const allTxs = getVisibleTransactions(); // Cached unfiltered list for bypass charts
     const style = getComputedStyle(document.documentElement);
-    const textPrimary = style.getPropertyValue('--text-primary').trim() || '#000';
-    const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#666';
-    const textTertiary = style.getPropertyValue('--text-tertiary').trim() || '#999';
-    const chartGrid = style.getPropertyValue('--chart-grid').trim() || 'rgba(0,0,0,0.06)';
-    const accentColor = style.getPropertyValue('--accent').trim() || '#007aff';
-    const dangerColor = style.getPropertyValue('--danger').trim() || '#ff3b30';
-    const successColor = style.getPropertyValue('--success').trim() || '#34c759';
-    const warningColor = style.getPropertyValue('--warning').trim() || '#ff9500';
+    const textPrimary = style.getPropertyValue('--text-primary').trim() || '#fff';
+    const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#aaa';
+    const textTertiary = style.getPropertyValue('--text-tertiary').trim() || '#666';
+    const chartGrid = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.06)';
+    const accentColor = style.getPropertyValue('--accent').trim() || '#6C5CE7';
+    const dangerColor = style.getPropertyValue('--danger').trim() || '#E17055';
+    const successColor = style.getPropertyValue('--success').trim() || '#00B894';
+    const warningColor = style.getPropertyValue('--warning').trim() || '#FDCB6E';
+    const bgGlass = style.getPropertyValue('--bg-glass').trim() || '#1c1c1e';
+
+    // Shared modern tooltip config
+    const modernTooltip = {
+        backgroundColor: bgGlass + 'ee',
+        titleColor: textPrimary,
+        bodyColor: textSecondary,
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        cornerRadius: 8,
+        padding: 10,
+        displayColors: true,
+        boxPadding: 4
+    };
+
+    // Shared modern animation
+    const modernAnimation = { duration: 500, easing: 'easeOutQuart' };
+
+    // Shared font config
+    const fontFamily = 'system-ui, -apple-system, sans-serif';
 
     // 1. Expense Trend
     const ctx1 = document.getElementById('analyticsBalanceTrend')?.getContext('2d');
@@ -100,32 +120,32 @@ async function renderAnalyticsCharts(filteredTxs) {
                     return `${['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(mo)]} ${y.slice(2)}`;
                 }),
                 datasets: [{
-                    label: 'Expenses',
+                    label: 'Monthly Expenses',
                     data: expData,
-                    borderColor: dangerColor,
-                    tension: 0.4,
+                    borderColor: accentColor,
+                    backgroundColor: accentColor + '18',
+                    borderWidth: 2.5,
                     fill: true,
-                    backgroundColor: hexToRgba(dangerColor, 0.1),
-                    pointRadius: 3
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 7,
+                    pointBackgroundColor: accentColor,
+                    pointBorderColor: bgGlass,
+                    pointBorderWidth: 2
                 }]
             },
             options: {
-                animation: { duration: 300 },
+                animation: modernAnimation,
                 responsive: true,
-                plugins: { legend: { display: false } },
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { ...modernTooltip, callbacks: { label: ctx => '  ' + formatCurrency(ctx.raw) } }
+                },
                 scales: {
-                    x: {
-                        ticks: { color: textTertiary, font: { size: 10 } },
-                        grid: { color: chartGrid }
-                    },
-                    y: {
-                        ticks: {
-                            color: textTertiary,
-                            font: { size: 10 },
-                            callback: v => formatCurrency(v)
-                        },
-                        grid: { color: chartGrid }
-                    }
+                    x: { ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
+                    y: { ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v), count: 4 }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true }
                 }
             }
         });
@@ -148,26 +168,22 @@ async function renderAnalyticsCharts(filteredTxs) {
                 datasets: [{
                     data: sorted.map(e => e[1]),
                     backgroundColor: sorted.map(e => getCategoryColor(e[0], 'expense')),
-                    borderRadius: 4
+                    borderRadius: 6,
+                    borderSkipped: false
                 }]
             },
             options: {
-                animation: { duration: 300 },
+                animation: modernAnimation,
+                indexAxis: 'y',
                 responsive: true,
-                plugins: { legend: { display: false } },
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { ...modernTooltip, callbacks: { label: ctx => '  ' + formatCurrency(ctx.raw) } }
+                },
                 scales: {
-                    x: {
-                        ticks: { color: textTertiary, font: { size: 10 } },
-                        grid: { display: false }
-                    },
-                    y: {
-                        ticks: {
-                            color: textTertiary,
-                            font: { size: 10 },
-                            callback: v => formatCurrency(v)
-                        },
-                        grid: { color: chartGrid }
-                    }
+                    x: { ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v) }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true },
+                    y: { ticks: { color: textSecondary, font: { size: 11, family: fontFamily } }, grid: { display: false }, border: { display: false } }
                 }
             }
         });
@@ -208,50 +224,22 @@ async function renderAnalyticsCharts(filteredTxs) {
                     return `${['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(mo)]} ${y.slice(2)}`;
                 }),
                 datasets: [
-                    {
-                        label: 'Groceries',
-                        data: mKeys.map(k => monMap[k].groc),
-                        backgroundColor: successColor,
-                        borderRadius: 4
-                    },
-                    {
-                        label: 'Rent',
-                        data: mKeys.map(k => monMap[k].rent),
-                        backgroundColor: warningColor,
-                        borderRadius: 4
-                    },
-                    {
-                        label: 'Other',
-                        data: mKeys.map(k => monMap[k].other),
-                        backgroundColor: dangerColor,
-                        borderRadius: 4
-                    }
+                    { label: 'Groceries', data: mKeys.map(m => monMap[m].groc), backgroundColor: successColor, borderRadius: 6, borderSkipped: false },
+                    { label: 'Rent', data: mKeys.map(m => monMap[m].rent), backgroundColor: warningColor, borderRadius: 6, borderSkipped: false },
+                    { label: 'Other', data: mKeys.map(m => monMap[m].other), backgroundColor: accentColor, borderRadius: 6, borderSkipped: false }
                 ]
             },
             options: {
-                animation: { duration: 300 },
+                animation: modernAnimation,
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        labels: {
-                            color: textPrimary,
-                            font: { size: 10 }
-                        }
-                    }
+                    legend: { labels: { color: textSecondary, font: { size: 10, family: fontFamily }, usePointStyle: true, pointStyleWidth: 8, padding: 10 } },
+                    tooltip: { ...modernTooltip, callbacks: { label: ctx => '  ' + ctx.dataset.label + ': ' + formatCurrency(ctx.raw) } }
                 },
                 scales: {
-                    x: {
-                        ticks: { color: textTertiary, font: { size: 10 } },
-                        grid: { display: false }
-                    },
-                    y: {
-                        ticks: {
-                            color: textTertiary,
-                            font: { size: 10 },
-                            callback: v => formatCurrency(v)
-                        },
-                        grid: { color: chartGrid }
-                    }
+                    x: { stacked: true, ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
+                    y: { stacked: true, ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v), count: 4 }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true }
                 }
             }
         });
@@ -261,9 +249,45 @@ async function renderAnalyticsCharts(filteredTxs) {
     const ctx4 = document.getElementById('analyticsSpenderBreakdown')?.getContext('2d');
     if (ctx4) {
         if (analyticsSpenderChart) analyticsSpenderChart.destroy();
+        
+        // Normalize payer names to merge same person's different name variants
+        const myName = (state.currentUser && state.currentUser.name) ? state.currentUser.name.toLowerCase().trim() : '';
+        const myNameParts = myName.split(/\s+/).filter(p => p.length > 1); // Word parts
+        const myEmail = (state.currentUser && state.currentUser.email) ? state.currentUser.email.split('@')[0].toLowerCase() : '';
+        
+        function normalizePayer(rawPayer) {
+            if (!rawPayer || rawPayer === 'Unspecified') return 'Unspecified';
+            const lower = rawPayer.toLowerCase().trim();
+            const payerParts = lower.split(/\s+/).filter(p => p.length > 1);
+            
+            // Direct match against canonical name or email prefix
+            if (myName && (lower === myName || lower === myEmail)) {
+                return state.currentUser.name;
+            }
+            
+            // Check if any significant word part matches (e.g., "Rob" in "Rob KS" matches "Robert")
+            for (const myPart of myNameParts) {
+                for (const payerPart of payerParts) {
+                    // Match if one contains the other, or if they share a common prefix (e.g., "Rob" vs "Robert")
+                    if (myPart.includes(payerPart) || payerPart.includes(myPart) ||
+                        (myPart.length >= 3 && payerPart.length >= 3 && 
+                         (myPart.startsWith(payerPart) || payerPart.startsWith(myPart)))) {
+                        return state.currentUser.name;
+                    }
+                }
+            }
+            
+            // Check email parts against payer
+            if (myEmail && payerParts.some(p => myEmail.includes(p) || p.includes(myEmail))) {
+                return state.currentUser.name;
+            }
+            
+            return rawPayer.trim();
+        }
+        
         const payerMap = {};
         filtered.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
-            const p = t.payer || 'Unspecified';
+            const p = normalizePayer(t.payer || 'Unspecified');
             payerMap[p] = (payerMap[p] || 0) + parseFloat(t.amount);
         });
         const pSorted = Object.entries(payerMap).sort((a, b) => b[1] - a[1]);
@@ -274,19 +298,20 @@ async function renderAnalyticsCharts(filteredTxs) {
                 labels: pSorted.map(e => e[0]),
                 datasets: [{
                     data: pSorted.map(e => e[1]),
-                    backgroundColor: pSorted.map(e => e[0] === 'Unspecified' ? '#8e8e93' : (typeof getStringColor === 'function' ? getStringColor(e[0]) : '#007aff')),
-                    borderWidth: 0
+                    backgroundColor: pSorted.map(e => e[0] === 'Unspecified' ? '#8e8e93' : (typeof getStringColor === 'function' ? getStringColor(e[0]) : accentColor)),
+                    borderColor: bgGlass,
+                    borderWidth: 3,
+                    borderRadius: 4,
+                    spacing: 2
                 }]
             },
             options: {
-                animation: { duration: 300 },
+                animation: modernAnimation,
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { 
-                    legend: { 
-                        position: 'bottom',
-                        labels: { color: textPrimary, font: { size: 11 } }
-                    } 
+                    legend: { position: 'bottom', labels: { color: textSecondary, font: { size: 11, family: fontFamily }, usePointStyle: true, padding: 12 } },
+                    tooltip: modernTooltip
                 },
                 cutout: '55%',
                 onClick: (event, elements, chart) => {
@@ -309,14 +334,32 @@ async function renderAnalyticsCharts(filteredTxs) {
     if (ctx5) {
         if (analyticsSubcatGroupChart) analyticsSubcatGroupChart.destroy();
         const groupMap = {};
-        filtered.filter(t => ['expense', 'groceries'].includes(t.type)).forEach(t => {
-            if (t.subcategory && t.subcategory.includes(':')) {
+        const expTxs = filtered.filter(t => ['expense', 'groceries', 'rent'].includes(t.type));
+        
+        // Check if any transaction uses the group-prefix subcategory format (e.g., "Produce: Vegetables")
+        const hasGroupedSubcats = expTxs.some(t => t.subcategory && t.subcategory.includes(':'));
+        
+        expTxs.forEach(t => {
+            const amount = parseFloat(t.amount) || 0;
+            if (hasGroupedSubcats && t.subcategory && t.subcategory.includes(':')) {
+                // Use the group prefix before the colon as the group label
                 const group = t.subcategory.split(':')[0].trim();
-                groupMap[group] = (groupMap[group] || 0) + parseFloat(t.amount);
+                groupMap[group] = (groupMap[group] || 0) + amount;
+            } else if (hasGroupedSubcats) {
+                // Only fall through to Ungrouped if some other subcats DO have groups
+                groupMap['Other'] = (groupMap['Other'] || 0) + amount;
             } else {
-                groupMap['Ungrouped'] = (groupMap['Ungrouped'] || 0) + parseFloat(t.amount);
+                // No grouped subcats at all — group by parent category instead
+                const label = t.category || 'Uncategorized';
+                groupMap[label] = (groupMap[label] || 0) + amount;
             }
         });
+        
+        // If no data at all, show a placeholder
+        if (Object.keys(groupMap).length === 0) {
+            groupMap['No data'] = 0;
+        }
+        
         const gSorted = Object.entries(groupMap).sort((a, b) => b[1] - a[1]);
         
         analyticsSubcatGroupChart = new Chart(ctx5, {
@@ -325,31 +368,39 @@ async function renderAnalyticsCharts(filteredTxs) {
                 labels: gSorted.map(e => e[0]),
                 datasets: [{
                     data: gSorted.map(e => e[1]),
-                    backgroundColor: gSorted.map(e => e[0] === 'Ungrouped' ? '#8e8e93' : (typeof getStringColor === 'function' ? getStringColor(e[0]) : '#007aff')),
-                    borderWidth: 0
+                    backgroundColor: gSorted.map(e => e[0] === 'Other' || e[0] === 'No data' ? '#8e8e93' : (typeof getStringColor === 'function' ? getStringColor(e[0]) : accentColor)),
+                    borderColor: bgGlass,
+                    borderWidth: 3,
+                    borderRadius: 4,
+                    spacing: 2
                 }]
             },
             options: {
-                animation: { duration: 300 },
+                animation: modernAnimation,
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { 
-                    legend: { 
-                        position: 'bottom',
-                        labels: { color: textPrimary, font: { size: 11 } }
-                    } 
+                    legend: { position: 'bottom', labels: { color: textSecondary, font: { size: 11, family: fontFamily }, usePointStyle: true, padding: 12 } },
+                    tooltip: modernTooltip
                 },
                 cutout: '55%',
                 onClick: (event, elements, chart) => {
                     if (elements.length > 0) {
                         const index = elements[0].index;
                         const label = chart.data.labels[index];
+                        // Navigate to Transactions and filter by the clicked group
+                        const filterCatEl = document.getElementById('filterCategory');
                         const filterSearchEl = document.getElementById('filterSearch');
-                        if (filterSearchEl) {
-                            // Append colon to ensure it searches for the group prefix strictly
-                            filterSearchEl.value = label === 'Ungrouped' ? '' : label + ':';
-                            navigateTo('screenTransactions');
+                        if (hasGroupedSubcats) {
+                            // Group-prefix mode: search for the group prefix with colon
+                            if (filterSearchEl && label !== 'Other') {
+                                filterSearchEl.value = label + ':';
+                            }
+                        } else if (filterCatEl && label !== 'Uncategorized' && label !== 'No data') {
+                            // Category mode: filter by the clicked category
+                            filterCatEl.value = label;
                         }
+                        navigateTo('screenTransactions');
                     }
                 }
             }
@@ -452,7 +503,7 @@ function setupAnalyticsMonthlyPeriodSelector() {
         selector.setAttribute('aria-label', 'Monthly breakdown period selector');
         
         const canvas = chartCard.querySelector('canvas');
-        if (canvas) chartCard.insertBefore(selector, canvas);
+        if (canvas && canvas.parentNode) canvas.parentNode.insertBefore(selector, canvas);
         
         const periods = [3, 6, 12];
         periods.forEach(p => {
@@ -496,7 +547,7 @@ function setupAnalyticsTrendPeriodSelector() {
         selector.setAttribute('aria-label', 'Expense trend period selector');
         
         const canvas = chartCard.querySelector('canvas');
-        if (canvas) chartCard.insertBefore(selector, canvas);
+        if (canvas && canvas.parentNode) canvas.parentNode.insertBefore(selector, canvas);
         
         const periods = [3, 6, 12];
         periods.forEach(p => {

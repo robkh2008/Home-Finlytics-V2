@@ -189,6 +189,10 @@ async function renderDashboardCharts(transactions = null) {
     const ctx1 = document.getElementById('dashPieChart')?.getContext('2d');
     if (ctx1) {
         if (dashPieChartInstance) dashPieChartInstance.destroy();
+        const style = getComputedStyle(document.documentElement);
+        const textPrimary = style.getPropertyValue('--text-primary').trim() || '#fff';
+        const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#aaa';
+        
         dashPieChartInstance = new Chart(ctx1, {
             type: 'doughnut',
             data: {
@@ -196,29 +200,52 @@ async function renderDashboardCharts(transactions = null) {
                 datasets: [{
                     data: catData,
                     backgroundColor: catColors,
-                    borderWidth: 0
+                    borderColor: style.getPropertyValue('--bg-glass').trim() || '#1c1c1e',
+                    borderWidth: 3,
+                    hoverBorderWidth: 4,
+                    hoverBorderColor: catColors.map(c => c),
+                    borderRadius: 4,
+                    spacing: 2
                 }]
             },
             options: {
-                animation: { duration: 300 },
+                animation: { 
+                    duration: 600, 
+                    easing: 'easeOutQuart',
+                    animateRotate: true,
+                    animateScale: true
+                },
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary'),
-                            font: { size: 11 }
+                            color: textSecondary,
+                            font: { size: 11, family: 'system-ui, -apple-system, sans-serif' },
+                            padding: 12,
+                            usePointStyle: true,
+                            pointStyleWidth: 8,
+                            pointStyleHeight: 8
                         }
+                    },
+                    tooltip: {
+                        backgroundColor: style.getPropertyValue('--bg-glass').trim() + 'ee',
+                        titleColor: textPrimary,
+                        bodyColor: textSecondary,
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        padding: 10,
+                        displayColors: true,
+                        boxPadding: 4
                     }
                 },
-                cutout: '65%',
-                // ENHANCEMENT: Click on a category to filter transactions
+                cutout: '60%',
                 onClick: (event, elements, chart) => {
                     if (elements.length > 0) {
                         const index = elements[0].index;
                         const label = chart.data.labels[index];
-                        // Set the filter and navigate to transactions
                         const filterCatEl = document.getElementById('filterCategory');
                         if (filterCatEl) {
                             filterCatEl.value = label;
@@ -245,6 +272,17 @@ async function renderDashboardCharts(transactions = null) {
     const ctx2 = document.getElementById('dashTrendChart')?.getContext('2d');
     if (ctx2) {
         if (dashTrendChartInstance) dashTrendChartInstance.destroy();
+        const style = getComputedStyle(document.documentElement);
+        const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#aaa';
+        const textTertiary = style.getPropertyValue('--text-tertiary').trim() || '#666';
+        const gridColor = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.06)';
+        const accentColor = style.getPropertyValue('--accent').trim() || '#6C5CE7';
+        
+        // Create gradient for bars
+        const gradient = ctx2.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, accentColor + 'cc');
+        gradient.addColorStop(1, accentColor + '33');
+        
         dashTrendChartInstance = new Chart(ctx2, {
             type: 'bar',
             data: {
@@ -256,42 +294,58 @@ async function renderDashboardCharts(transactions = null) {
                     {
                         label: 'Expenses',
                         data: expData,
-                        backgroundColor: dangerColor,
-                        borderRadius: 4
+                        backgroundColor: gradient,
+                        borderRadius: 6,
+                        borderSkipped: false,
+                        hoverBackgroundColor: accentColor
                     }
                 ]
             },
             options: {
-                animation: { duration: 300 },
+                animation: { 
+                    duration: 500, 
+                    easing: 'easeOutQuart'
+                },
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        labels: {
-                            color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary'),
-                            font: { size: 11 }
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: style.getPropertyValue('--bg-glass').trim() + 'ee',
+                        titleColor: style.getPropertyValue('--text-primary').trim(),
+                        bodyColor: textSecondary,
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        padding: 10,
+                        callbacks: {
+                            label: ctx => formatCurrency(ctx.raw)
                         }
                     }
                 },
                 scales: {
                     x: {
                         ticks: {
-                            color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary'),
-                            font: { size: 10 }
+                            color: textTertiary,
+                            font: { size: 10, family: 'system-ui, -apple-system, sans-serif' },
+                            maxRotation: 0
                         },
-                        grid: {
-                            color: getComputedStyle(document.documentElement).getPropertyValue('--chart-grid')
-                        }
+                        grid: { display: false },
+                        border: { display: false }
                     },
                     y: {
                         ticks: {
-                            color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary'),
-                            font: { size: 10 },
-                            callback: v => formatCurrency(v)
+                            color: textTertiary,
+                            font: { size: 10, family: 'system-ui, -apple-system, sans-serif' },
+                            callback: v => formatCurrency(v),
+                            count: 4
                         },
                         grid: {
-                            color: getComputedStyle(document.documentElement).getPropertyValue('--chart-grid')
-                        }
+                            color: gridColor,
+                            drawBorder: false
+                        },
+                        border: { display: false },
+                        beginAtZero: true
                     }
                 }
             }

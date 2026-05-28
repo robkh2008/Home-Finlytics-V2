@@ -12,6 +12,11 @@ function refreshReceiptForm() {
     const issueDate = document.getElementById('receiptIssueDate');
     if (issueDate) issueDate.value = new Date().toISOString().slice(0, 10);
     
+    // Preload html2canvas early so JPG/PDF downloads are instant when clicked
+    if (typeof window.html2canvas === 'undefined') {
+        loadHtml2Canvas().catch(() => {});
+    }
+    
     // FIX: Use CSS class to hide instead of inline style
     const previewCard = document.getElementById('receiptPreviewCard');
     if (previewCard) {
@@ -265,9 +270,12 @@ function showReceiptActionButtons(receiptNo = '') {
     previewCard.appendChild(actionRow);
 
     // Share via Web Share API (with desktop/iOS fallback)
-    document.getElementById('shareReceiptBtn')?.addEventListener('click', async () => {
+    document.getElementById('shareReceiptBtn')?.addEventListener('click', async function() {
         const receiptPaper = document.getElementById('receiptPaper');
         if (!receiptPaper) return;
+        const origHTML = this.innerHTML;
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
         
         try {
             const isLoaded = await loadHtml2Canvas();
@@ -278,7 +286,8 @@ function showReceiptActionButtons(receiptNo = '') {
             const canvas = await html2canvas(receiptPaper, { 
                 scale: window.devicePixelRatio ? window.devicePixelRatio * 1.5 : 3,
                 backgroundColor: '#ffffff',
-                useCORS: true
+                useCORS: true,
+                willReadFrequently: true
             });
             
             // Try Web Share API with file (works on Android Chrome, iOS Safari)
@@ -304,37 +313,58 @@ function showReceiptActionButtons(receiptNo = '') {
             }, 'image/jpeg', 0.9);
         } catch (e) {
             console.error(e);
-            showToast('Failed to generate image for sharing.', 'times-circle');
+            if (e.name !== 'AbortError') {
+                showToast('Failed to generate image for sharing.', 'times-circle');
+            }
+        } finally {
+            this.disabled = false;
+            this.innerHTML = origHTML;
         }
     });
 
     // Download as JPG (works on desktop + Android; iOS opens image for long-press save)
-    document.getElementById('downloadJPGBtn')?.addEventListener('click', async () => {
+    document.getElementById('downloadJPGBtn')?.addEventListener('click', async function() {
         const receiptPaper = document.getElementById('receiptPaper');
         if (!receiptPaper) return;
+        const origHTML = this.innerHTML;
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
         try {
             const isLoaded = await loadHtml2Canvas();
             if (!isLoaded) {
-                showToast('Failed to load image processor.', 'exclamation-triangle');
+                showToast('Failed to load image processor. Check your internet.', 'exclamation-triangle');
                 return;
             }
-            const canvas = await html2canvas(receiptPaper, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+            const canvas = await html2canvas(receiptPaper, { 
+                scale: 2, 
+                backgroundColor: '#ffffff', 
+                useCORS: true,
+                willReadFrequently: true
+            });
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
             if (isIOS) {
-                // iOS Safari ignores download attribute — open in new tab for long-press save
                 const win = window.open('');
-                win.document.write(`<img src="${canvas.toDataURL('image/jpeg', 0.9)}" style="max-width:100%;"><p style="text-align:center;font-family:sans-serif;">Long-press the image and tap <strong>Save to Photos</strong>.</p>`);
+                if (win) {
+                    win.document.write(`<img src="${canvas.toDataURL('image/jpeg', 0.9)}" style="max-width:100%;"><p style="text-align:center;font-family:sans-serif;">Long-press the image and tap <strong>Save to Photos</strong>.</p>`);
+                }
                 showToast('Long-press image to save to Photos', 'image');
             } else {
-                const link = document.createElement('a');
-                link.download = `Receipt_${receiptNo}.jpg`;
-                link.href = canvas.toDataURL('image/jpeg', 0.9);
-                link.click();
-                showToast('JPG downloaded!', 'check-circle');
+                canvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `Receipt_${receiptNo}.jpg`;
+                    link.href = url;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    showToast('JPG downloaded!', 'check-circle');
+                }, 'image/jpeg', 0.9);
             }
         } catch (e) {
             console.error(e);
-            showToast('Failed to download JPG.', 'times-circle');
+            showToast('Failed to download JPG: ' + (e.message || 'Unknown error'), 'times-circle');
+        } finally {
+            this.disabled = false;
+            this.innerHTML = origHTML;
         }
     });
 
@@ -346,8 +376,38 @@ function showReceiptActionButtons(receiptNo = '') {
         });
     });
 
-    // PDF – trigger print dialog
-    document.getElementById('downloadPDFBtn')?.addEventListener('click', () => {
-        printReceiptWithClass();
+    // PDF – render receipt as high-quality image and open for print/Save as PDF
+    document.getElementById('downloadPDFBtn')?.addEventListener('click', async function() {
+        const origHTML = this.innerHTML;
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+        
+        const receiptPaper = document.getElementById('receiptPaper');
+        if (receiptPaper && typeof window.html2canvas !== 'undefined') {
+            try {
+                const canvas = await html2canvas(receiptPaper, { 
+                    scale: 2, backgroundColor: '#ffffff', useCORS: true, willReadFrequently: true 
+                });
+                const win = window.open('');
+                if (win) {
+                    win.document.write(`
+                        <html><head><title>Receipt ${receiptNo}</title>
+                        <style>body{margin:0;display:flex;justify-content:center;background:#fff;}img{max-width:100%;}</style>
+                        </head><body><img src="${canvas.toDataURL('image/jpeg', 0.95)}" onload="window.print()"></body></html>
+                    `);
+                    win.document.close();
+                    showToast('Receipt opened for printing — use Save as PDF in the print dialog.', 'print');
+                } else {
+                    printReceiptWithClass();
+                }
+            } catch (e) {
+                printReceiptWithClass();
+            }
+        } else {
+            printReceiptWithClass();
+        }
+        
+        this.disabled = false;
+        this.innerHTML = origHTML;
     });
 }

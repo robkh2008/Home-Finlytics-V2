@@ -8,6 +8,7 @@ function addTransaction(txData, skipRefresh = false) {
     const tx = { id: generateId(), ...txData, createdAt: new Date().toISOString() };
     if (!state.transactions) state.transactions = [];
     state.transactions.unshift(tx);
+    if (typeof invalidateTxCache === 'function') invalidateTxCache();
     saveState();
     if (!skipRefresh) {
         refreshAll();
@@ -28,6 +29,7 @@ function updateTransaction(id, updates) {
             ...updates,
             updatedAt: new Date().toISOString()
         };
+        if (typeof invalidateTxCache === 'function') invalidateTxCache();
         saveState();
         refreshAll();
         showToast('Transaction updated!', 'check-circle');
@@ -39,6 +41,7 @@ function updateTransaction(id, updates) {
 function deleteTransaction(id) {
     state.transactions = state.transactions.filter(t => t.id !== id);
     state.selectedTxIds.delete(id);
+    if (typeof invalidateTxCache === 'function') invalidateTxCache();
     saveState();
     refreshAll();
     showToast('Transaction deleted.', 'trash-alt');

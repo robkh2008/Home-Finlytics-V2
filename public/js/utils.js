@@ -168,9 +168,17 @@ function getStringColor(str) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
     
-    // High-contrast palettes for WCAG AA compliance in both themes
-    const darkThemeColors = ['#339af0', '#34c759', '#ffaa00', '#ff5252', '#d08cf2', '#8c82f0', '#ff6b8b', '#ff79c6', '#20c997', '#4dd0e1'];
-    const lightThemeColors = ['#005bb5', '#1e7b1e', '#d97706', '#d32f2f', '#6f42c1', '#4b0082', '#c71585', '#008b8b', '#005f73', '#996515'];
+    // Modern, pleasing palette — cohesive pastels for dark theme, rich tones for light theme
+    const darkThemeColors = [
+        '#6C5CE7', '#00B894', '#FDCB6E', '#E17055', '#A29BFE',
+        '#55EFC4', '#FAB1A0', '#74B9FF', '#FF7675', '#81ECEC',
+        '#DFE6E9', '#FFEAA7', '#B8E994', '#D6A2E8', '#78C2C2'
+    ];
+    const lightThemeColors = [
+        '#5B4CC4', '#00856A', '#D4A017', '#C0392B', '#7C6FF7',
+        '#00A878', '#E07B6B', '#2980B9', '#D64545', '#17A2A2',
+        '#636E72', '#BF9A2A', '#5A9E3E', '#8E44AD', '#3D8B8B'
+    ];
     
     const colors = state.theme === 'light' ? lightThemeColors : darkThemeColors;
     
@@ -180,18 +188,36 @@ function getStringColor(str) {
 function getVisibleTransactions() {
     if (!state.transactions) return [];
     
-    if (state.userRole === 'admin') return state.transactions;
+    // MEMOIZATION: Cache the filtered result. Invalidate when transactions change.
+    const txFingerprint = state.transactions.length + '_' + (state.transactions[0]?.id || '') + '_' + state.userRole;
+    if (window._visibleTxsCache && window._visibleTxsFingerprint === txFingerprint) {
+        return window._visibleTxsCache;
+    }
     
-    // For non-admin users, restrict to public/shared transaction types only
-    // Public types: groceries, rent, lent, returned, settlement, and House Rent expenses
-    return state.transactions.filter(tx => 
-        tx.type === 'groceries' || 
-        tx.type === 'rent' ||
-        tx.type === 'lent' ||
-        tx.type === 'returned' ||
-        tx.type === 'settlement' ||
-        (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
-    );
+    let result;
+    if (state.userRole === 'admin') {
+        result = state.transactions;
+    } else {
+        // For non-admin users, restrict to public/shared transaction types only
+        result = state.transactions.filter(tx => 
+            tx.type === 'groceries' || 
+            tx.type === 'rent' ||
+            tx.type === 'lent' ||
+            tx.type === 'returned' ||
+            tx.type === 'settlement' ||
+            (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
+        );
+    }
+    
+    window._visibleTxsCache = result;
+    window._visibleTxsFingerprint = txFingerprint;
+    return result;
+}
+
+// Call this whenever transactions are modified to bust the cache
+function invalidateTxCache() {
+    window._visibleTxsCache = null;
+    window._visibleTxsFingerprint = null;
 }
 
 let _chartJsLoadPromise = null;

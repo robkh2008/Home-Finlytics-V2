@@ -1,0 +1,93 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "admins": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
+      "uids": {
+        ".indexOn": [".value"]
+      },
+      "emails": {
+        ".indexOn": [".value"]
+      }
+    },
+
+    "profiles": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['displayName'])",
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 50"
+        }
+      }
+    },
+
+    "appState": {
+      "transactions_public": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": ["type", "category", "date", "createdAt"],
+        "$txId": {
+          ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])"
+        }
+      },
+
+      "transactions_private": {
+        ".read": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
+        ".indexOn": ["type", "category", "date", "createdAt"],
+        "$txId": {
+          ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])"
+        }
+      },
+
+      "houses": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+      "categories": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+      "budgets": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+      "recurringTemplates": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+      "payers": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+      "currency": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+      "electricRate": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+
+      "transactions": {
+        ".read": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
+        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+      },
+
+      "lastUpdated": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+      },
+
+      "lastWriteId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}
