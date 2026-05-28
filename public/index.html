@@ -150,6 +150,7 @@
                     <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-bar"></i> 6-Month Trend</h3><div class="chart-wrap"><canvas id="dashTrendChart" role="img" aria-label="Expense Trend Bar Chart"></canvas></div></div>
                     <div class="quick-stats-row" id="dashboardQuickStats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
                     <div class="card glass-card"><h3 class="card-title"><i class="fas fa-clock"></i> Recent Transactions</h3><div id="recentTxList"></div></div>
+                    <div class="card glass-card admin-only" id="dashboardLandingCard"><div id="dashboardLandingSummary"></div></div>
                     <div class="card glass-card" id="budgetOverviewCard"><h3 class="card-title"><i class="fas fa-bullseye"></i> Budget Overview</h3><div id="budgetOverviewList"></div></div>
                 </div>
             </section>
@@ -199,9 +200,12 @@
                             <div class="form-group"><label for="addType">Type <span class="required">*</span></label><select id="addType" class="form-select" required><option value="">Select</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option></select></div>
                             <div class="form-group" id="addSplitGroup" style="display:none;"><label>Split equally with</label><div id="addSplitCheckboxes" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
                             <div class="form-group" id="addHouseGroup" style="display:none;"><label for="addHouse">House</label><select id="addHouse" class="form-select"><option value="">Select</option></select></div>
+                            <div class="form-group" id="addPayerGroup" style="display:none;"><label for="addPayerOverride">Payer</label><select id="addPayerOverride" class="form-select"><option value="">Me</option></select></div>
                             <div class="form-group"><label for="addPaymentMethod">Payment Method</label><select id="addPaymentMethod" class="form-select"><option value="cash">Cash</option><option value="upi">UPI</option><option value="bank">Bank Transfer</option><option value="icici card">ICICI Card</option><option value="scb card">SCB Card</option></select></div>
                             <div class="form-group"><label for="addCategory">Category <span class="required">*</span></label><select id="addCategory" class="form-select" required><option value="">Select Category</option></select></div>
                             <div class="form-group"><label for="addSubcategory">Subcategory</label><select id="addSubcategory" class="form-select"><option value="">Select Subcategory</option></select></div>
+                            <div class="form-group" id="addBorrowerGroup" style="display:none;"><label for="addBorrower">Borrower Name</label><input type="text" id="addBorrower" class="form-input" placeholder="Who borrowed?"></div>
+                            <div class="form-group" id="addLandingStatusGroup" style="display:none;"><label for="addLandingStatus">Landing Status</label><select id="addLandingStatus" class="form-select"><option value="active">Active (Not Returned)</option><option value="returned">Returned</option><option value="writeoff">Written Off</option></select></div>
                             <div class="form-group"><label for="addAmount">Amount (₹) <span class="required">*</span></label><input type="number" id="addAmount" class="form-input" placeholder="0.00" step="0.01" min="0.01" required></div>
                             <div class="form-group"><label for="addDate">Date</label><input type="date" id="addDate" class="form-input" required></div>
                             <div class="form-group"><label for="addNotes">Notes</label><textarea id="addNotes" class="form-textarea" rows="2" placeholder="Optional..."></textarea></div>
@@ -387,6 +391,14 @@
                             <input type="text" id="newPayerName" class="form-input" placeholder="Add payer name" aria-label="New payer name">
                             <button id="addPayerBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
                         </div>
+                    </div>
+                    <!-- User Management (Admin Only) -->
+                    <div class="card glass-card settings-card admin-only">
+                        <h3 class="card-title"><i class="fas fa-user-shield"></i> User Management</h3>
+                        <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;">Manage registered users, admin access, and account removal.</p>
+                        <button id="loadUsersBtn" class="btn btn-primary btn-full" style="margin-bottom:12px;"><i class="fas fa-sync-alt"></i> Load Users</button>
+                        <div id="userManagementList"></div>
+                        <p id="userManagementError" style="color:var(--danger);font-size:0.8rem;display:none;"></p>
                     </div>
                     <!-- App Installation -->
                     <div class="card glass-card settings-card" id="installAppCard" style="display:none; background: linear-gradient(135deg, rgba(0,122,255,0.1) 0%, rgba(52,199,89,0.1) 100%); border: 1px solid rgba(0,122,255,0.3);">

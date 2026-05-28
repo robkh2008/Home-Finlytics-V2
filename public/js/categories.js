@@ -35,6 +35,14 @@ function updateSubcategoryDropdown() {
     
     if (!subSelect) return;
     
+    // Show/hide landing fields
+    const borrowerGroup = document.getElementById('addBorrowerGroup');
+    const landingStatusGroup = document.getElementById('addLandingStatusGroup');
+    const isLanding = (catName === 'Miscellaneous Expenses');
+    
+    if (borrowerGroup) borrowerGroup.style.display = isLanding ? 'block' : 'none';
+    if (landingStatusGroup) landingStatusGroup.style.display = isLanding ? 'block' : 'none';
+    
     // Build the string first for better performance
     let optionsHTML = '<option value="">Select</option>';
 

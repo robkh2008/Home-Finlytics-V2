@@ -73,6 +73,15 @@ function saveState() {
     _saveStateTimer = setTimeout(() => {
         _saveStateTimer = null;
         if (typeof window.saveStateToFirebase === 'function' && navigator.onLine && state.currentUser) {
+            // Guard: don't push to cloud until we've pulled from cloud at least once
+            if (!window._cloudSyncDone) {
+                window._cloudSyncRetries = (window._cloudSyncRetries || 0) + 1;
+                if (window._cloudSyncRetries <= 10) {
+                    saveState(); // Re-schedule the write
+                }
+                return;
+            }
+            window._cloudSyncRetries = 0;
             const syncPromise = window.saveStateToFirebase(state);
             if (syncPromise && syncPromise.then) {
                 syncPromise.then(() => {
@@ -276,6 +285,10 @@ function onFirebaseDataReceived(firebaseData) {
 
     // UPDATE LOCAL STORAGE to match cloud state
     try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+
+    // Mark cloud sync as complete — allows Firebase writes to proceed
+    window._cloudSyncDone = true;
+    window._cloudSyncRetries = 0;
 
     // CRITICAL: JSON serialization destroys Set objects — always reinitialize
     state.selectedTxIds = new Set();
@@ -531,9 +544,12 @@ function bindTransactionEvents() {
             amount: parseFloat(document.getElementById('addAmount').value),
             date: document.getElementById('addDate').value,
             notes: document.getElementById('addNotes').value || '',
-            payer: state.currentUser ? state.currentUser.name : 'Unknown',
+            payer: document.getElementById('addPayerOverride')?.value || (state.currentUser ? state.currentUser.name : 'Unknown'),
             paymentMethod: document.getElementById('addPaymentMethod')?.value || 'cash',
             splitWith: splitWith.length > 0 ? splitWith : null,
+            // Landing tracking fields
+            borrower: document.getElementById('addBorrower')?.value || '',
+            landingStatus: document.getElementById('addLandingStatus')?.value || 'active',
         };
             if (editTemplateIndex !== undefined && editTemplateIndex !== '') {
             const idx = parseInt(editTemplateIndex);
@@ -1178,7 +1194,7 @@ function bindSettingsEvents() {
     });
 
     // Force Refresh from Cloud — pulls latest data from Firebase without clearing cache
-    document.getElementById('forceRefreshCloudBtn')?.addEventListener('click', () => {
+    document.getElementById('forceRefreshCloudBtn')?.addEventListener('click', async () => {
         if (!navigator.onLine) {
             if (typeof showToast === 'function') showToast('You are currently offline.', 'wifi');
             return;
@@ -1194,40 +1210,37 @@ function bindSettingsEvents() {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing from Cloud...';
         }
         
-        // Set force-pull flag so onFirebaseDataReceived ALWAYS accepts cloud data
-        window._forceCloudPull = true;
-        
-        // Detach and re-attach listeners to force a fresh pull
-        if (typeof window.detachFirebaseListeners === 'function') {
-            window.detachFirebaseListeners();
-        }
-        
-        // Clear echo-prevention state so we accept all incoming data
-        if (window._firebasePendingWriteIds) {
-            window._firebasePendingWriteIds.clear();
-        }
-        
-        // Clear cached settings to force re-write if needed
-        window._lastWrittenSettings = null;
-        
-        // Re-attach listeners to get fresh data from Firebase
-        if (typeof window.listenToFirebaseState === 'function') {
-            window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
-        }
-        
-        if (typeof showToast === 'function') showToast('Pulling latest data from cloud...', 'cloud-download-alt');
-        
-        // Re-enable button after data arrives (or timeout)
-        const reenable = () => {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
+        try {
+            // Use direct get() calls — works reliably on mobile (no listener dependency)
+            if (typeof window.forcePullFromCloud === 'function') {
+                const cloudData = await window.forcePullFromCloud();
+                if (cloudData) {
+                    // Directly apply cloud data — bypass echo prevention entirely
+                    window.onFirebaseDataReceived(cloudData);
+                    if (typeof showToast === 'function') showToast('Cloud data loaded!', 'check-circle');
+                } else {
+                    if (typeof showToast === 'function') showToast('No cloud data found.', 'exclamation-triangle');
+                }
+            } else {
+                // Fallback: re-attach listeners (old method)
+                window._forceCloudPull = true;
+                if (typeof window.detachFirebaseListeners === 'function') window.detachFirebaseListeners();
+                if (window._firebasePendingWriteIds) window._firebasePendingWriteIds.clear();
+                window._lastWrittenSettings = null;
+                if (typeof window.listenToFirebaseState === 'function') {
+                    window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
+                }
+                if (typeof showToast === 'function') showToast('Pulling latest data from cloud...', 'cloud-download-alt');
             }
-        };
-        // Set a timeout as safety net
-        setTimeout(reenable, 5000);
-        // Store callback to be called when cloud data arrives
-        window._forceCloudPullDone = reenable;
+        } catch (e) {
+            console.error('Force refresh error:', e);
+            if (typeof showToast === 'function') showToast('Refresh failed: ' + (e.message || 'Unknown error'), 'times-circle');
+        }
+        
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
     });
 }
 
@@ -1552,12 +1565,11 @@ window.handleAuthStateChanged = async (user) => {
             state.userRole = 'user';
         }
         
-        // If role changed, re-attach Firebase listeners to pick up private transactions
-        const roleChanged = (previousRole !== state.userRole);
-        if (isNewUser || roleChanged) {
-            if (typeof window.listenToFirebaseState === 'function') {
-                window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
-            }
+        // CRITICAL FIX: Always attach Firebase listeners on every auth resolution.
+        // Previously only attached on isNewUser || roleChanged, which meant on page
+        // reload the app would run from stale localStorage and overwrite Firebase data!
+        if (typeof window.listenToFirebaseState === 'function') {
+            window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
         }
         
         const headerUserName = document.getElementById('headerUserName');
@@ -1619,6 +1631,8 @@ window.handleAuthStateChanged = async (user) => {
 
         if (wasUser) {
             if (typeof window.detachFirebaseListeners === 'function') window.detachFirebaseListeners();
+            window._cloudSyncDone = false;
+            window._cloudSyncRetries = 0;
             resetState();
             refreshAll();
             navigateTo('screenDashboard');
@@ -1739,17 +1753,28 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==================== NETWORK STATUS NOTIFICATIONS ====================
 window.addEventListener('online', () => {
     if (typeof showToast === 'function') showToast('Internet connection restored! Syncing...', 'wifi');
-    // Automatically push any local changes made while offline
-    if (state.currentUser && typeof window.saveStateToFirebase === 'function' && state.hasUnsyncedChanges) {
-        const syncPromise = window.saveStateToFirebase(state);
-        if (syncPromise && syncPromise.then) {
-            syncPromise.then(() => {
-                state.hasUnsyncedChanges = false;
-                if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
-                try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
-                if (typeof pulseSyncDot === 'function') pulseSyncDot();
-            }).catch(()=>{});
-        }
+    // CRITICAL: Pull from cloud first, then push local changes.
+    // This prevents stale offline data from overwriting cloud data.
+    if (state.currentUser && typeof window.forcePullFromCloud === 'function') {
+        window.forcePullFromCloud().then(cloudData => {
+            if (cloudData) {
+                window.onFirebaseDataReceived(cloudData);
+            }
+            // After pulling, push any pending local changes
+            if (state.hasUnsyncedChanges && typeof window.saveStateToFirebase === 'function') {
+                window.saveStateToFirebase(state).then(() => {
+                    state.hasUnsyncedChanges = false;
+                    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
+                    try { localStorage.setItem('home_finlytics_state', JSON.stringify(state)); } catch(e){}
+                    if (typeof pulseSyncDot === 'function') pulseSyncDot();
+                }).catch(()=>{});
+            }
+        }).catch(() => {
+            // Fallback: just push if pull fails
+            if (state.hasUnsyncedChanges && typeof window.saveStateToFirebase === 'function') {
+                window.saveStateToFirebase(state).catch(()=>{});
+            }
+        });
     }
 });
 

@@ -127,11 +127,20 @@ function renderPayerList() {
     const isAdmin = state.userRole === 'admin';
     if (!container) return;
     const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
-    container.innerHTML = payers.map((p, index) => `
-        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
-            <span>${escapeHTML(p)}</span>
+    
+    // Auto-include current user's profile name and email
+    const linkedNames = [];
+    if (state.userProfile?.displayName) linkedNames.push(state.userProfile.displayName);
+    if (state.currentUser?.email) linkedNames.push(state.currentUser.email.split('@')[0]);
+    
+    // Show linked status for names that match profile
+    container.innerHTML = payers.map((p, index) => {
+        const isLinked = linkedNames.some(n => n.toLowerCase() === p.toLowerCase());
+        return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);align-items:center;">
+            <span>${escapeHTML(p)}${isLinked ? ' <span style="font-size:0.65rem;color:var(--accent);background:rgba(108,92,231,0.15);padding:1px 6px;border-radius:6px;">👤 linked</span>' : ''}</span>
             ${isAdmin ? `<button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>` : ''}
-        </div>`).join('') || '<p style="color:var(--text-tertiary);">No payers added.</p>';
+        </div>`;
+    }).join('') || '<p style="color:var(--text-tertiary);">No payers added.</p>';
 }
 
 // Edit house — populates the add form fields with existing house data
@@ -208,3 +217,85 @@ function populateBudgetCategories() {
     const unique = [...new Set(combined)].sort();
     select.innerHTML = unique.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
 }
+// ==================== USER MANAGEMENT ====================
+document.getElementById("loadUsersBtn")?.addEventListener("click", async function() {
+    if (state.userRole !== "admin") return showToast("Unauthorized action", "exclamation-triangle");
+    const btn = this;
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = "<i class=\"fas fa-spinner fa-spin\"></i> Loading...";
+    
+    const listEl = document.getElementById("userManagementList");
+    const errEl = document.getElementById("userManagementError");
+    if (errEl) errEl.style.display = "none";
+    
+    try {
+        if (typeof window.adminListUsers !== "function") {
+            throw new Error("Cloud Functions not available. Deploy functions first.");
+        }
+        const users = await window.adminListUsers();
+        if (!users || users.length === 0) {
+            if (listEl) listEl.innerHTML = "<p style=\"color:var(--text-tertiary);\">No users found.</p>";
+            return;
+        }
+        
+        if (listEl) {
+            listEl.innerHTML = users.map(u => {
+                const isCurrentUser = u.uid === (state.currentUser?.uid || "");
+                return `<div style="padding:10px 0;border-bottom:1px solid var(--divider);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-weight:600;font-size:0.85rem;">${escapeHTML(u.displayName || u.email || "Unknown")}</div>
+                            <div style="font-size:0.7rem;color:var(--text-secondary);">${escapeHTML(u.email)}</div>
+                            <div style="font-size:0.65rem;color:var(--text-tertiary);">
+                                ${u.provider || "email"} � Last: ${u.lastSignIn ? new Date(u.lastSignIn).toLocaleDateString() : "Never"}
+                                ${u.isAdmin ? "<span style=\"color:var(--accent);margin-left:6px;\">?? Admin</span>" : "<span style=\"color:var(--text-tertiary);margin-left:6px;\">User</span>"}
+                                ${u.disabled ? "<span style=\"color:var(--danger);margin-left:6px;\">?? Disabled</span>" : ""}
+                            </div>
+                        </div>
+                        ${!isCurrentUser ? `<div style="display:flex;gap:4px;flex-shrink:0;">
+                            <button class="btn btn-xs ${u.isAdmin ? "btn-secondary" : "btn-primary"} toggle-admin-btn" data-uid="${escapeHTML(u.uid)}" data-email="${escapeHTML(u.email)}" data-admin="${!u.isAdmin}">
+                                ${u.isAdmin ? "Demote" : "Make Admin"}
+                            </button>
+                            <button class="btn btn-xs btn-danger delete-user-btn" data-uid="${escapeHTML(u.uid)}" data-name="${escapeHTML(u.displayName || u.email)}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>` : "<span style=\"font-size:0.7rem;color:var(--accent);\">You</span>"}
+                    </div>
+                </div>`;
+            }).join("");
+        }
+        
+        document.querySelectorAll(".toggle-admin-btn").forEach(b => {
+            b.addEventListener("click", async function() {
+                const uid = this.dataset.uid;
+                const email = this.dataset.email;
+                const makeAdmin = this.dataset.admin === "true";
+                try {
+                    await window.adminSetAdmin(uid, email, makeAdmin);
+                    showToast(makeAdmin ? "User promoted to admin!" : "Admin demoted to user.", "check-circle");
+                    document.getElementById("loadUsersBtn")?.click();
+                } catch (e) { showToast(e.message || "Failed", "times-circle"); }
+            });
+        });
+        
+        document.querySelectorAll(".delete-user-btn").forEach(b => {
+            b.addEventListener("click", function() {
+                const uid = this.dataset.uid;
+                const name = this.dataset.name;
+                showConfirm("Delete User", `Permanently delete user "${escapeHTML(name)}"? This cannot be undone.`, "user-times", async () => {
+                    try {
+                        await window.adminDeleteUser(uid);
+                        showToast("User deleted!", "check-circle");
+                        document.getElementById("loadUsersBtn")?.click();
+                    } catch (e) { showToast(e.message || "Failed", "times-circle"); }
+                });
+            });
+        });
+    } catch (e) {
+        if (errEl) { errEl.textContent = e.message || "Failed to load users."; errEl.style.display = "block"; }
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHTML;
+    }
+});

@@ -77,8 +77,59 @@ function refreshDashboard() {
     `).join('') || '<p style="color:var(--text-tertiary);text-align:center;">No transactions yet</p>';
 
     refreshBudgetOverview(txs);
+    refreshLandingSummary(txs);
     renderDashboardCharts(txs);
     setupTrendPeriodSelector();
+}
+
+// NEW: Landing summary widget for admin
+function refreshLandingSummary(txs) {
+    if (state.userRole !== 'admin') return;
+    const container = document.getElementById('dashboardLandingSummary');
+    if (!container) return;
+    
+    const landingTxs = txs.filter(t => t.subcategory === 'Landing' || (t.category === 'Miscellaneous Expenses' && t.subcategory === 'Landing'));
+    const active = landingTxs.filter(t => !t.landingStatus || t.landingStatus === 'active');
+    const returned = landingTxs.filter(t => t.landingStatus === 'returned');
+    const writtenOff = landingTxs.filter(t => t.landingStatus === 'writeoff');
+    
+    if (landingTxs.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'block';
+    
+    const totalActive = active.reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalReturned = returned.reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalWrittenOff = writtenOff.reduce((s, t) => s + parseFloat(t.amount), 0);
+    
+    container.innerHTML = `
+        <h3 class="card-title"><i class="fas fa-hand-holding-usd"></i> Landing (Money Lent)</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div class="glass-card" style="text-align:center;padding:10px 6px;">
+                <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;">Active</div>
+                <div style="font-weight:700;color:var(--warning);">${formatCurrency(totalActive)}</div>
+                <div style="font-size:0.6rem;color:var(--text-tertiary);">${active.length} pending</div>
+            </div>
+            <div class="glass-card" style="text-align:center;padding:10px 6px;">
+                <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;">Returned</div>
+                <div style="font-weight:700;color:var(--success);">${formatCurrency(totalReturned)}</div>
+                <div style="font-size:0.6rem;color:var(--text-tertiary);">${returned.length} cleared</div>
+            </div>
+            <div class="glass-card" style="text-align:center;padding:10px 6px;">
+                <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;">Written Off</div>
+                <div style="font-weight:700;color:var(--danger);">${formatCurrency(totalWrittenOff)}</div>
+                <div style="font-size:0.6rem;color:var(--text-tertiary);">${writtenOff.length} lost</div>
+            </div>
+        </div>
+        ${active.length > 0 ? `<div style="max-height:120px;overflow-y:auto;">${active.slice(0, 3).map(t => `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--divider);font-size:0.8rem;">
+                <span>${escapeHTML(t.borrower || 'Unknown')}</span>
+                <span style="font-weight:600;color:var(--warning);">${formatCurrency(t.amount)}</span>
+                <span style="font-size:0.65rem;color:var(--text-tertiary);">${t.date}</span>
+            </div>
+        `).join('')}</div>` : ''}
+    `;
 }
 
 // NEW: Period selector setup
@@ -141,22 +192,37 @@ function refreshBudgetOverview(txs = null) {
     }
     container.innerHTML = entries.map(([cat, limit]) => {
         const spent = transactions.filter(t => t.date.startsWith(thisMonth) && (t.category || '').toLowerCase() === cat.toLowerCase() && ['expense', 'groceries'].includes(t.type)).reduce((s, t) => s + parseFloat(t.amount), 0);
-        const safeLimit = parseFloat(limit) > 0 ? parseFloat(limit) : 1; // Prevent division by zero
-        const pct = Math.min(100, Math.max(0, Math.round((spent / safeLimit) * 100))) || 0; // Prevent NaN%
-        let cls = 'safe';
-        if (pct > 90) cls = 'danger';
-        else if (pct > 70) cls = 'warning';
-        return `<div style="margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;font-size:var(--font-size-sm);">
+        const safeLimit = parseFloat(limit) > 0 ? parseFloat(limit) : 1;
+        const pct = Math.min(100, Math.max(0, Math.round((spent / safeLimit) * 100))) || 0;
+        // Multi-color stages for budget usage
+        let gradientColors;
+        if (pct > 100) {
+            gradientColors = 'linear-gradient(90deg, #ff3b30, #ff6b6b)';
+        } else if (pct > 90) {
+            gradientColors = 'linear-gradient(90deg, #ff9500, #ffcc00)';
+        } else if (pct > 70) {
+            gradientColors = 'linear-gradient(90deg, #fdcb6e, #ffeaa7)';
+        } else if (pct > 50) {
+            gradientColors = 'linear-gradient(90deg, #34c759, #5ac8fa)';
+        } else {
+            gradientColors = 'linear-gradient(90deg, #5ac8fa, #a29bfe)';
+        }
+        const overBudget = spent > safeLimit;
+        return `<div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;font-size:var(--font-size-sm);margin-bottom:3px;">
                 <span>${escapeHTML(cat)}</span>
                 <span style="display:flex;align-items:center;gap:6px;">
-                    ${formatCurrency(spent)} / ${formatCurrency(limit)}
-                    <button class="btn btn-xs btn-secondary share-budget-btn" data-cat="${escapeHTML(cat)}" data-spent="${spent}" data-limit="${limit}" style="padding:2px 6px; border-radius:4px; font-size:0.7rem;" title="Share"><i class="fas fa-share-alt"></i></button>
+                    <span style="color:${overBudget ? 'var(--danger)' : 'var(--text-primary)'};font-weight:600;">
+                        ${formatCurrency(spent)}
+                    </span>
+                    <span style="color:var(--text-tertiary);">/ ${formatCurrency(limit)}</span>
+                    ${overBudget ? '<span style="font-size:0.65rem;color:var(--danger);background:rgba(255,59,48,0.15);padding:1px 6px;border-radius:8px;">OVER</span>' : ''}
                 </span>
             </div>
-            <div class="budget-progress-bar">
-                <div class="budget-progress-fill ${cls}" style="width:${pct}%;"></div>
+            <div class="budget-progress-bar" style="height:8px;border-radius:4px;">
+                <div class="budget-progress-fill" style="width:${Math.min(pct, 100)}%;background:${gradientColors};border-radius:4px;transition:width 0.5s ease;"></div>
             </div>
+            <div style="font-size:0.6rem;color:var(--text-tertiary);text-align:right;margin-top:2px;">${pct}% used</div>
         </div>`;
     }).join('');
 }

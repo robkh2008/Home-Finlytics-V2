@@ -16,7 +16,7 @@ const DEFAULT_CATEGORIES = {
         { name: 'Personal Care', icon:"💆", color: '#d63384', subcategories: ['Haircut', 'Cosmetics', 'Hair Care', 'Body Care', 'Skin Care', 'Spa'] },
         { name: 'Debt & Loans', icon:"💳", color: '#dc3545', subcategories: ['Credit Card', 'EMI', 'Personal Loan', 'Home Loan', 'Car Loan', 'Business Loan'] },
         { name: 'Marup', icon:"💼", color: '#c0ca33', subcategories: ['Rohen', 'Echan', 'Abe Phanek'] },
-        { name: 'Miscellaneous Expenses', icon:"📦", color: '#6c757d', subcategories: ['Other Expenses', 'Taxes', 'Home Transfer', 'Donations', 'Fines'] }],
+        { name: 'Miscellaneous Expenses', icon:"📦", color: '#6c757d', subcategories: ['Other Expenses', 'Taxes', 'Home Transfer', 'Donations', 'Fines', 'Landing'] }],
     groceries: [
         { name: 'Groceries', icon:"🛒", color: '#8bc34a', subcategories: ['Vegetables', 'Fruits', 'Fish', 'Drinking Water', 'Meat', 'Dairy & Eggs', 'Grains', 'Snacks', 'Beverages', 'Pantry & Spices', 'Household'] }
     ]

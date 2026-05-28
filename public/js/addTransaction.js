@@ -74,6 +74,7 @@ function deleteMultipleTransactions(ids) {
 function refreshAddForm() {
     const form = document.getElementById('addTransactionForm');
     const isEditingTemplate = form && form.dataset.editTemplateIndex !== undefined && form.dataset.editTemplateIndex !== '';
+    const isAdmin = state.userRole === 'admin';
     
     const submitBtn = document.querySelector('#addTransactionForm button[type="submit"]');
     if (submitBtn) {
@@ -84,10 +85,25 @@ function refreshAddForm() {
     if (recurringCheckboxWrap) {
         recurringCheckboxWrap.style.display = isEditingTemplate ? 'none' : 'block';
     }
+    
+    // Admin payer override — show for groceries type
+    const payerGroup = document.getElementById('addPayerGroup');
+    const type = document.getElementById('addType')?.value || '';
+    if (payerGroup) {
+        payerGroup.style.display = (isAdmin && type === 'groceries') ? 'block' : 'none';
+        if (isAdmin) {
+            const payerSelect = document.getElementById('addPayerOverride');
+            if (payerSelect) {
+                const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
+                payerSelect.innerHTML = '<option value="">Me</option>' +
+                    payers.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');
+            }
+        }
+    }
 
     refreshAddFormCategories();
-    const type = document.getElementById('addType')?.value || '';
-    document.getElementById('addHouseGroup').style.display = type === 'rent' ? 'block' : 'none';
+    const addType = document.getElementById('addType')?.value || '';
+    document.getElementById('addHouseGroup').style.display = addType === 'rent' ? 'block' : 'none';
 
     // Populate houses
     const houseSelect = document.getElementById('addHouse');

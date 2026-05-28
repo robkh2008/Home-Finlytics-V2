@@ -31,7 +31,10 @@
         ".write": "auth != null",
         ".indexOn": ["type", "category", "date", "createdAt"],
         "$txId": {
-          ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])"
+          ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])",
+          "amount": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 99999999" },
+          "type": { ".validate": "newData.isString() && newData.val().matches(/^(groceries|rent|lent|returned|settlement|expense)$/)" },
+          "date": { ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)" }
         }
       },
 
@@ -40,7 +43,10 @@
         ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
         ".indexOn": ["type", "category", "date", "createdAt"],
         "$txId": {
-          ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])"
+          ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])",
+          "amount": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 99999999" },
+          "type": { ".validate": "newData.isString() && newData.val().matches(/^(expense|groceries|rent|lent|returned|settlement|income)$/)" },
+          "date": { ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)" }
         }
       },
 
