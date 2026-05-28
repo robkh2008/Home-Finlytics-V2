@@ -30,6 +30,8 @@ let unsubscribeConnectionListener = null;
 // 6. Production Sync Functions
 // Track writes to prevent echo-chamber re-read
 let _pendingWriteIds = new Set();
+// Track deletions to force immediate removal from caches
+let _pendingDeletions = { public: new Set(), private: new Set() };
 
 export function saveStateToFirebase(appState) {
     if (!auth.currentUser) return Promise.resolve(); // Prevent writing if not authenticated
@@ -61,12 +63,18 @@ export function saveStateToFirebase(appState) {
     // Compare with the memory cache to identify and delete removed transactions
     if (window._firebasePublicCache) {
         Object.keys(window._firebasePublicCache).forEach(id => {
-            if (!currentPublicIds.has(id)) updates[`/appState/transactions_public/${id}`] = null;
+            if (!currentPublicIds.has(id)) {
+                updates[`/appState/transactions_public/${id}`] = null;
+                _pendingDeletions.public.add(id);
+            }
         });
     }
     if (window._firebasePrivateCache) {
         Object.keys(window._firebasePrivateCache).forEach(id => {
-            if (!currentPrivateIds.has(id)) updates[`/appState/transactions_private/${id}`] = null;
+            if (!currentPrivateIds.has(id)) {
+                updates[`/appState/transactions_private/${id}`] = null;
+                _pendingDeletions.private.add(id);
+            }
         });
     }
 
@@ -185,6 +193,9 @@ export function listenToFirebaseState(onDataReceived, userRole) {
     const publicTxsRef = ref(database, 'appState/transactions_public');
     unsubscribePublicTxs = onValue(publicTxsRef, (snapshot) => {
         publicCache = snapshot.val() || {};
+        // Immediately remove any pending deletions from the cache
+        _pendingDeletions.public.forEach(id => delete publicCache[id]);
+        _pendingDeletions.public.clear();
         window._firebasePublicCache = publicCache;
         mergeAndCallback();
     });
@@ -194,6 +205,9 @@ export function listenToFirebaseState(onDataReceived, userRole) {
     const privateTxsRef = ref(database, 'appState/transactions_private');
     unsubscribePrivateTxs = onValue(privateTxsRef, (snapshot) => {
         privateCache = snapshot.val() || {};
+        // Immediately remove any pending deletions from the cache
+        _pendingDeletions.private.forEach(id => delete privateCache[id]);
+        _pendingDeletions.private.clear();
         window._firebasePrivateCache = privateCache;
         mergeAndCallback();
     });

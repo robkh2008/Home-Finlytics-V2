@@ -39,6 +39,21 @@ function updateTransaction(id, updates) {
 }
 
 function deleteTransaction(id) {
+    // Immediately remove from Firebase caches to prevent listener from re-adding
+    if (window._firebasePublicCache && window._firebasePublicCache[id]) {
+        delete window._firebasePublicCache[id];
+        // Schedule immediate Firebase write for the deletion (skip debounce)
+        if (typeof window.saveStateToFirebase === 'function' && navigator.onLine && state.currentUser) {
+            window.saveStateToFirebase(state).catch(() => {});
+        }
+    }
+    if (window._firebasePrivateCache && window._firebasePrivateCache[id]) {
+        delete window._firebasePrivateCache[id];
+        if (typeof window.saveStateToFirebase === 'function' && navigator.onLine && state.currentUser) {
+            window.saveStateToFirebase(state).catch(() => {});
+        }
+    }
+    
     state.transactions = state.transactions.filter(t => t.id !== id);
     state.selectedTxIds.delete(id);
     if (typeof invalidateTxCache === 'function') invalidateTxCache();

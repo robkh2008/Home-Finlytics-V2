@@ -148,6 +148,26 @@ function onFirebaseDataReceived(firebaseData) {
                          (firebaseData.categories && (firebaseData.categories.expense || firebaseData.categories.groceries)) ||
                          (firebaseData.houses && firebaseData.houses.length > 0);
     
+    // During Force Refresh, always accept cloud data even if incomplete
+    if (window._forceCloudPull) {
+        // Keep waiting for more complete data — only apply when we have transactions or after 3 seconds
+        if (!cloudHasData && !window._forceCloudPullTimer) {
+            window._forceCloudPullTimer = setTimeout(() => {
+                window._forceCloudPull = false;
+                window._forceCloudPullTimer = null;
+                if (typeof showToast === 'function') showToast('Cloud data loaded!', 'check-circle');
+                if (window._forceCloudPullDone) { window._forceCloudPullDone(); window._forceCloudPullDone = null; }
+            }, 3000);
+            return; // Wait for transactions to arrive
+        }
+        if (cloudHasData) {
+            window._forceCloudPull = false;
+            if (window._forceCloudPullTimer) { clearTimeout(window._forceCloudPullTimer); window._forceCloudPullTimer = null; }
+            if (typeof showToast === 'function') showToast('Cloud data loaded!', 'check-circle');
+            if (window._forceCloudPullDone) { window._forceCloudPullDone(); window._forceCloudPullDone = null; }
+        }
+    }
+    
     if (!cloudHasData && state.transactions && state.transactions.length > 0) {
         // Cloud is empty but we have local data — push local to cloud instead
         if (typeof window.saveStateToFirebase === 'function' && state.currentUser) {
@@ -1174,6 +1194,9 @@ function bindSettingsEvents() {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing from Cloud...';
         }
         
+        // Set force-pull flag so onFirebaseDataReceived ALWAYS accepts cloud data
+        window._forceCloudPull = true;
+        
         // Detach and re-attach listeners to force a fresh pull
         if (typeof window.detachFirebaseListeners === 'function') {
             window.detachFirebaseListeners();
@@ -1184,31 +1207,27 @@ function bindSettingsEvents() {
             window._firebasePendingWriteIds.clear();
         }
         
+        // Clear cached settings to force re-write if needed
+        window._lastWrittenSettings = null;
+        
         // Re-attach listeners to get fresh data from Firebase
         if (typeof window.listenToFirebaseState === 'function') {
             window.listenToFirebaseState(window.onFirebaseDataReceived, state.userRole);
         }
         
-        // Also push any pending local changes first
-        if (typeof window.saveStateToFirebase === 'function') {
-            const syncPromise = window.saveStateToFirebase(state);
-            if (syncPromise && syncPromise.then) {
-                syncPromise.then(() => {
-                    state.hasUnsyncedChanges = false;
-                    if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
-                }).catch(() => {});
-            }
-        }
-        
         if (typeof showToast === 'function') showToast('Pulling latest data from cloud...', 'cloud-download-alt');
         
-        // Re-enable button after a delay
-        setTimeout(() => {
+        // Re-enable button after data arrives (or timeout)
+        const reenable = () => {
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-        }, 3000);
+        };
+        // Set a timeout as safety net
+        setTimeout(reenable, 5000);
+        // Store callback to be called when cloud data arrives
+        window._forceCloudPullDone = reenable;
     });
 }
 
