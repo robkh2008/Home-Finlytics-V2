@@ -1,5 +1,5 @@
 // Change this version number whenever you deploy an update (e.g., to 'finlytics-cache-v2')
-const CACHE_NAME = 'finlytics-cache-v15';
+const CACHE_NAME = 'finlytics-cache-v16';
 
 // Add the core files you want to cache for instant offline loading
 // NOTE: app.js, firebase-sync.js, settings.js are excluded from SW cache
@@ -46,18 +46,21 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Activate event: Clear old caches when a new service worker takes over
+// Activate event: Clear old caches and take control immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    Promise.all([
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      }),
+      self.clients.claim() // Take control of all open tabs immediately
+    ])
   );
 });
 
