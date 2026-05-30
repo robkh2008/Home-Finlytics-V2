@@ -27,24 +27,6 @@
 .receipt-paper hr { border: none; border-top: 1px solid #e0e0e0; margin: 12px 0; }
 .receipt-paper pre { font-family: inherit; font-size: 0.9rem; color: #555; margin: 8px 0; }
 
-.receipt-total-preview {
-    font-weight: 700;
-    font-size: var(--font-size-lg);
-    color: var(--text-primary);
-    padding: 8px 0;
-    border-top: 2px solid var(--divider);
-    margin-top: 8px;
-}
-
-.receipt-total-form {
-    font-weight: 700;
-    font-size: var(--font-size-lg);
-    color: var(--text-primary);
-    margin: 8px 0;
-}
-
-#receiptActionsRow { animation: fadeSlideIn 0.2s ease-out; }
-
 @media print {
     body.printing-receipt * { visibility: hidden !important; }
     body.printing-receipt #receiptPaper,
@@ -75,12 +57,9 @@
     body.printing-receipt .modal-overlay,
     body.printing-receipt .toast-container,
     body.printing-receipt #receiptForm,
-    body.printing-receipt #receiptActionsRow,
     body.printing-receipt .card-title,
-    body.printing-receipt .receipt-total-preview,
     body.printing-receipt #printReceiptBtn,
-    body.printing-receipt #receiptTotalPreviewForm,
-    body.printing-receipt #receiptTotalPreviewDisplay { display: none !important; }
+    body.printing-receipt .sticky-save-bar { display: none !important; }
     body.printing-receipt #screenReceipt {
         position: static !important; overflow: visible !important;
         padding: 0 !important; margin: 0 !important;

@@ -1,2 +1,6 @@
 {
+    "chat.planAgent.defaultModel": "",
+    "inlineChat.defaultModel": "",
+    "deepseek-copilot.experimental.stabilizeToolList": true,
+    "deepseekv4.logRawReasoning": true
 }

@@ -14,13 +14,11 @@ function refreshAddFormCategories() {
                 // Auto-select House Rent category for rent type
                 catSelect.innerHTML = '<option value="">Select</option><option value="House Rent" selected>House Rent</option>';
             } else {
-                // Determine the source category list. For non-admin users
-                // with no type selected, default to groceries (what they can see).
+                // USER-CENTRIC: All users can see expense categories for their own expenses
                 let sourceType = type;
                 if (!sourceType || !state.categories?.[sourceType]) {
-                    // Fallback: non-admin users see only groceries categories,
-                    // admin users see expense categories when type is empty.
-                    sourceType = (state.userRole === 'admin') ? 'expense' : 'groceries';
+                    // Default: expense for expense type, groceries for groceries type
+                    sourceType = (type === 'groceries') ? 'groceries' : 'expense';
                 }
                 const cats = state.categories?.[sourceType] ? Object.values(state.categories[sourceType]).filter(Boolean) : [];
                 catSelect.innerHTML = '<option value="">Select</option>' + cats.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
@@ -28,6 +26,9 @@ function refreshAddFormCategories() {
         }
         // Also reset subcategory dropdown when category changes
         updateSubcategoryDropdown();
+        
+        // Refresh payment method dropdown with latest payment modes
+        if (typeof refreshPaymentModeSelects === 'function') refreshPaymentModeSelects();
 }
   
 // Populate subcategory based on selected category
@@ -41,7 +42,7 @@ function updateSubcategoryDropdown() {
     // Show/hide landing fields
     const borrowerGroup = document.getElementById('addBorrowerGroup');
     const landingStatusGroup = document.getElementById('addLandingStatusGroup');
-    const isLanding = (catName === 'Miscellaneous Expenses');
+    const isLanding = (catName === 'Landing');
     
     if (borrowerGroup) borrowerGroup.style.display = isLanding ? 'block' : 'none';
     if (landingStatusGroup) landingStatusGroup.style.display = isLanding ? 'block' : 'none';
@@ -98,11 +99,9 @@ function updateSubcategoryDropdown() {
                 subSelect.disabled = true;
             }
             
-            // Always add the "Add new..." option at the end if admin
-            if (state.userRole === 'admin') {
-                optionsHTML += '<option value="__new__">+ Add new...</option>';
-                subSelect.disabled = false;
-            }
+            // Always add the "Add new..." option at the end - all users can add subcategories now
+            optionsHTML += '<option value="__new__">+ Add new...</option>';
+            subSelect.disabled = false;
         } else {
             // Disable the dropdown if no category is selected
             subSelect.disabled = true;

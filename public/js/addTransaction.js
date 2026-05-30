@@ -1,9 +1,153 @@
 // ==================== js/addTransaction.js ====================
+
+// Map each chip to which type(s) it should be visible for
+const CHIP_TYPE_MAP = {
+    'Food': 'expense',
+    'Transport': 'expense',
+    'Shopping': 'expense',
+    'Healthcare': 'expense',
+    'Entertainment': 'expense',
+    'Utilities': 'expense',
+    'Personal Care': 'expense',
+    'Education': 'expense',
+    'Debt & Loans': 'expense',
+    'Marup': 'expense',
+    'Landing': 'expense',
+    'Miscellaneous Expenses': 'expense',
+    'Groceries': 'groceries',  // all groceries subcats
+    'House Rent': 'rent',       // all rent subcats
+};
+
+// Event delegation for type selector cards and quick-category chips (attach directly)
+document.addEventListener('click', function(e) {
+    // Type selector cards
+    const card = e.target.closest('.type-card');
+    if (card) {
+        const typeVal = card.dataset.type;
+        if (typeVal && typeof selectAddType === 'function') {
+            selectAddType(typeVal);
+            return;
+        }
+    }
+    
+    // Date quick-select chips
+    const dateChip = e.target.closest('.date-chip');
+    if (dateChip) {
+        const dateInput = document.getElementById('addDate');
+        if (!dateInput) return;
+        const today = new Date();
+        let targetDate;
+        switch (dateChip.dataset.date) {
+            case 'today':
+                targetDate = today;
+                break;
+            case 'yesterday':
+                targetDate = new Date(today);
+                targetDate.setDate(today.getDate() - 1);
+                break;
+            case 'monthStart':
+                targetDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                break;
+        }
+        if (targetDate) {
+            dateInput.value = targetDate.toISOString().slice(0, 10);
+            // Highlight active chip
+            document.querySelectorAll('.date-chip').forEach(c => c.classList.remove('active'));
+            dateChip.classList.add('active');
+            // Auto-focus amount field after date selection
+            setTimeout(() => {
+                const amtInput = document.getElementById('addAmount');
+                if (amtInput) amtInput.focus();
+            }, 100);
+        }
+        return;
+    }
+    
+    // Quick category/subcategory chips
+    const chip = e.target.closest('.quick-cat-chip');
+    if (chip) {
+        const cat = chip.dataset.cat;
+        const sub = chip.dataset.sub;
+        if (!cat) return;
+        
+        // Set the category dropdown
+        const catSelect = document.getElementById('addCategory');
+        if (catSelect) {
+            const options = Array.from(catSelect.options);
+            const match = options.find(o => o.value === cat);
+            if (match) {
+                catSelect.value = cat;
+                catSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        
+        // If there's a subcategory, also set it after a brief delay
+        if (sub) {
+            setTimeout(() => {
+                const subSelect = document.getElementById('addSubcategory');
+                if (subSelect) {
+                    const subOptions = Array.from(subSelect.options);
+                    const subMatch = subOptions.find(o => o.value === sub || o.textContent.trim() === sub);
+                    if (subMatch) {
+                        subSelect.value = subMatch.value;
+                        subSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            }, 150);
+        }
+        
+        // Highlight the tapped chip briefly
+        chip.classList.add('matched');
+        setTimeout(() => chip.classList.remove('matched'), 600);
+        return;
+    }
+});
+
+// Filter quick-category chips based on selected type
+function filterCategoryChipsByType(typeVal) {
+    const chips = document.querySelectorAll('.quick-cat-chip');
+    chips.forEach(chip => {
+        const cat = chip.dataset.cat;
+        const chipType = CHIP_TYPE_MAP[cat] || 'expense';
+        if (typeVal === 'all' || chipType === typeVal || 
+            (typeVal === 'groceries' && cat === 'Groceries') ||
+            (typeVal === 'rent' && cat === 'House Rent')) {
+            chip.style.display = '';
+            chip.classList.add('chip-visible');
+        } else {
+            chip.style.display = 'none';
+            chip.classList.remove('chip-visible');
+        }
+    });
+}
+
+// Handle type selection via icon cards
+function selectAddType(typeVal) {
+    // Update hidden select
+    const hiddenSelect = document.getElementById('addType');
+    if (hiddenSelect) hiddenSelect.value = typeVal;
+    
+    // Update card states
+    document.querySelectorAll('.type-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.type === typeVal);
+    });
+    
+    // Filter category chips to match the new type
+    filterCategoryChipsByType(typeVal);
+    
+    // Trigger the same logic as if the dropdown changed
+    refreshAddForm();
+}
+
 function addTransaction(txData, skipRefresh = false) {
     // Input validation
     if (isNaN(txData.amount) || txData.amount <= 0) {
         showToast('Amount must be greater than 0', 'exclamation-triangle');
         return null;
+    }
+    // Auto-set userId from current user
+    if (!txData.userId) {
+        txData.userId = getCurrentUserId();
     }
     const tx = { id: generateId(), ...txData, createdAt: new Date().toISOString() };
     if (!state.transactions) state.transactions = [];
@@ -76,6 +220,15 @@ function refreshAddForm() {
     const isEditingTemplate = form && form.dataset.editTemplateIndex !== undefined && form.dataset.editTemplateIndex !== '';
     const isAdmin = state.userRole === 'admin';
     
+    // Sync type selector cards with hidden select
+    const addType = document.getElementById('addType')?.value || 'expense';
+    document.querySelectorAll('.type-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.type === addType);
+    });
+    
+    // Filter quick-category chips based on current type
+    filterCategoryChipsByType(addType);
+    
     const submitBtn = document.querySelector('#addTransactionForm button[type="submit"]');
     if (submitBtn) {
         submitBtn.innerHTML = isEditingTemplate ? '<i class="fas fa-save"></i> Update Template' : '<i class="fas fa-save"></i> Save';
@@ -86,23 +239,27 @@ function refreshAddForm() {
         recurringCheckboxWrap.style.display = isEditingTemplate ? 'none' : 'block';
     }
     
-    // Admin payer override — show for groceries type
+    // Payer override — show for all groceries types (any user can specify who paid)
     const payerGroup = document.getElementById('addPayerGroup');
     const type = document.getElementById('addType')?.value || '';
     if (payerGroup) {
-        payerGroup.style.display = (isAdmin && type === 'groceries') ? 'block' : 'none';
-        if (isAdmin) {
-            const payerSelect = document.getElementById('addPayerOverride');
-            if (payerSelect) {
-                const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
-                payerSelect.innerHTML = '<option value="">Me</option>' +
-                    payers.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');
-            }
+        // Show payer override for groceries (any user can record for the group)
+        payerGroup.style.display = (type === 'groceries') ? 'block' : 'none';
+        const payerSelect = document.getElementById('addPayerOverride');
+        if (payerSelect) {
+            // Build payer list from group members + payers
+            const groupMembers = getUserGroupMembers();
+            const payerNames = groupMembers.map(m => m.displayName).filter(Boolean);
+            // Also include state.payers
+            (state.payers || []).forEach(p => {
+                if (!payerNames.includes(p)) payerNames.push(p);
+            });
+            payerSelect.innerHTML = '<option value="">Me</option>' +
+                payerNames.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');
         }
     }
 
     refreshAddFormCategories();
-    const addType = document.getElementById('addType')?.value || '';
     document.getElementById('addHouseGroup').style.display = addType === 'rent' ? 'block' : 'none';
 
     // Populate houses
@@ -140,7 +297,7 @@ function refreshAddForm() {
 
 // NEW: Create dynamic UI for adding custom subcategory
 function setupCustomSubcategoryUI() {
-    if (state.userRole !== 'admin') return;
+    // All authenticated users can add custom subcategories
     const subSelect = document.getElementById('addSubcategory');
     if (!subSelect) return;
 
@@ -168,7 +325,7 @@ function setupCustomSubcategoryUI() {
 
 // NEW: Auto-add new subcategory to the selected category
 function addCustomSubcategoryToCurrentCategory() {
-    if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+    // All users can add subcategories to their categories
     const type = document.getElementById('addType')?.value || '';
     const catName = document.getElementById('addCategory')?.value;
     const subName = document.getElementById('addCustomSubcatInput')?.value.trim();
@@ -237,3 +394,53 @@ window.updateSplitCheckboxes = function() {
         .map(p => `<label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;cursor:pointer;"><input type="checkbox" value="${p}" class="split-cb" style="accent-color:var(--accent);"> ${p}</label>`)
         .join('');
 };
+
+// ===== Sticky Save Bar — Live Total Update =====
+function updateStickyAddTotal() {
+    const amtInput = document.getElementById('addAmount');
+    const totalEl = document.getElementById('stickyAddTotal');
+    if (!totalEl) return;
+    const amt = parseFloat(amtInput?.value) || 0;
+    totalEl.textContent = amt > 0 ? 'Total: ' + formatCurrency(amt) : 'Total: ₹0.00';
+    totalEl.style.color = amt > 0 ? 'var(--accent)' : 'var(--text-tertiary)';
+}
+
+// Bind amount input to sticky total (only once)
+document.addEventListener('DOMContentLoaded', function() {
+    const amtInput = document.getElementById('addAmount');
+    if (amtInput && !window._stickyTotalBound) {
+        window._stickyTotalBound = true;
+        amtInput.addEventListener('input', updateStickyAddTotal);
+        // Also update on form reset
+        const form = document.getElementById('addTransactionForm');
+        if (form) {
+            form.addEventListener('reset', function() {
+                setTimeout(updateStickyAddTotal, 50);
+            });
+            // Update after submit too
+            form.addEventListener('submit', function() {
+                setTimeout(updateStickyAddTotal, 50);
+            });
+        }
+    }
+});
+
+// Bind amount input to sticky total (only once)
+document.addEventListener('DOMContentLoaded', function() {
+    const amtInput = document.getElementById('addAmount');
+    if (amtInput && !window._stickyTotalBound) {
+        window._stickyTotalBound = true;
+        amtInput.addEventListener('input', updateStickyAddTotal);
+        // Also update on form reset
+        const form = document.getElementById('addTransactionForm');
+        if (form) {
+            form.addEventListener('reset', function() {
+                setTimeout(updateStickyAddTotal, 50);
+            });
+            // Update after submit too
+            form.addEventListener('submit', function() {
+                setTimeout(updateStickyAddTotal, 50);
+            });
+        }
+    }
+});

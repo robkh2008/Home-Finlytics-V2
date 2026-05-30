@@ -25,6 +25,34 @@ function formatCurrency(amount) {
     });
 }
 
+// NEW: Compact currency format for small screens (₹ 1.2K, ₹ 5.6L, ₹ 1.5Cr)
+function formatCurrencyCompact(amount) {
+    const sym = state.currency || '₹';
+    const num = parseFloat(amount);
+    if (isNaN(num)) return sym + ' 0';
+    const abs = Math.abs(num);
+    if (abs >= 10000000) { // 1 Cr+
+        return sym + ' ' + (num / 10000000).toFixed(1) + 'Cr';
+    }
+    if (abs >= 100000) { // 1 Lakh+
+        return sym + ' ' + (num / 100000).toFixed(1) + 'L';
+    }
+    if (abs >= 1000) { // 1 Thousand+
+        return sym + ' ' + (num / 1000).toFixed(1) + 'K';
+    }
+    return sym + ' ' + num.toFixed(0);
+}
+
+// NEW: Detect if we're on a small screen (≤400px) where compact format is needed
+function isSmallScreen() {
+    return window.innerWidth <= 400;
+}
+
+// NEW: Smart format — compact on small screens, full otherwise
+function formatCurrencySmart(amount) {
+    return isSmallScreen() ? formatCurrencyCompact(amount) : formatCurrency(amount);
+}
+
 function getCategoryColor(catName, type) {
     if (catName === 'Settlement') return '#34c759';
     if (catName === 'Lent') return '#ff9500';
@@ -81,7 +109,9 @@ const SUBCATEGORY_ICONS = {
     'Rohen': '👥', 'Echan': '🤝', 'Abe Phanek': '🗣️',
     // Miscellaneous
     'Other Expenses': '📄', 'Taxes': '🏛️', 'Home Transfer': '🚚',
-    'Donations': '❤️', 'Fines': '⚠️', 'Landing': '📤',
+    'Donations': '❤️', 'Fines': '⚠️',
+    // Landing
+    'Money Lent': '💰', 'Returned': '✅', 'Written Off': '❌',
 };
 
 function getSubcategoryIcon(subcatName, catName) {
@@ -250,29 +280,157 @@ function getVisibleTransactions() {
     if (!state.transactions) return [];
     
     // MEMOIZATION: Cache the filtered result. Invalidate when transactions change.
-    const txFingerprint = state.transactions.length + '_' + (state.transactions[0]?.id || '') + '_' + state.userRole;
+    const currentUserId = getCurrentUserId();
+    const txFingerprint = state.transactions.length + '_' + (state.transactions[0]?.id || '') + '_' + state.userRole + '_' + currentUserId;
     if (window._visibleTxsCache && window._visibleTxsFingerprint === txFingerprint) {
         return window._visibleTxsCache;
     }
     
     let result;
+    // Resolve current user's name for split-bill matching
+    const currentUserName = (state.currentUser?.name || state.userProfile?.displayName || '').toLowerCase();
+    
     if (state.userRole === 'admin') {
-        result = state.transactions;
+        // Admin sees all transactions for management, BUT rent is filtered by linked houses
+        const userLinkedHouseIds = getCurrentUserHouseIds();
+        result = state.transactions.filter(tx => {
+            // Split bills where admin is a participant — always visible
+            if (tx.splitWith) {
+                const splitArr = Array.isArray(tx.splitWith) ? tx.splitWith : [tx.splitWith];
+                if (splitArr.some(s => s.toLowerCase() === currentUserName)) return true;
+            }
+            // Filter OUT rent transactions for houses NOT linked to this admin
+            if (tx.type === 'rent' || (tx.type === 'expense' && tx.category === 'House Rent')) {
+                // Include if no houseId (legacy) OR houseId is in user's linked houses
+                if (!tx.houseId) return true;
+                return userLinkedHouseIds.includes(tx.houseId);
+            }
+            return true; // All other transactions visible to admin
+        });
     } else {
-        // For non-admin users, restrict to public/shared transaction types only
-        result = state.transactions.filter(tx => 
-            tx.type === 'groceries' || 
-            tx.type === 'rent' ||
-            tx.type === 'lent' ||
-            tx.type === 'returned' ||
-            tx.type === 'settlement' ||
-            (tx.type === 'expense' && (tx.category === 'House Rent' || tx.category === 'Groceries'))
-        );
+        // USER-CENTRIC MODEL: Each user sees:
+        // 1. Their own expense transactions (userId === currentUserId)
+        // 2. Split bills where they are a participant
+        // 3. ALL groceries transactions (shared kitchen)
+        // 4. Rent transactions for houses linked to them
+        // 5. Lent/returned/settlement (shared)
+        const userId = currentUserId;
+        const userLinkedHouseIds = getCurrentUserHouseIds();
+        
+        result = state.transactions.filter(tx => {
+            // Own expenses
+            if (tx.userId === userId) return true;
+            // Split bills where current user is a participant
+            if (tx.splitWith) {
+                const splitArr = Array.isArray(tx.splitWith) ? tx.splitWith : [tx.splitWith];
+                if (splitArr.some(s => s.toLowerCase() === currentUserName)) return true;
+            }
+            // Shared groceries (visible to all users in the group)
+            if (tx.type === 'groceries') return true;
+            if (tx.type === 'expense' && tx.category === 'Groceries') return true;
+            // Shared rent for user's linked houses
+            if ((tx.type === 'rent' || (tx.type === 'expense' && tx.category === 'House Rent')) && 
+                tx.houseId && userLinkedHouseIds.includes(tx.houseId)) return true;
+            // Shared transactions (lent, returned, settlement)
+            if (tx.type === 'lent' || tx.type === 'returned' || tx.type === 'settlement') return true;
+            // Transactions with no userId (legacy data) — show if type is shared
+            if (!tx.userId && (tx.type === 'groceries' || tx.type === 'lent' || tx.type === 'returned' || tx.type === 'settlement')) return true;
+            return false;
+        });
     }
     
     window._visibleTxsCache = result;
     window._visibleTxsFingerprint = txFingerprint;
     return result;
+}
+
+// NEW: Get current user's unique ID
+function getCurrentUserId() {
+    if (state.currentUser?.uid) return state.currentUser.uid;
+    if (state.currentUser?.email) return state.currentUser.email.toLowerCase();
+    if (state.userProfile?.email) return state.userProfile.email.toLowerCase();
+    return 'anonymous';
+}
+
+// NEW: Get house IDs linked to the current user
+function getCurrentUserHouseIds() {
+    const userId = getCurrentUserId();
+    const userEmail = (state.currentUser?.email || state.userProfile?.email || '').toLowerCase();
+    const userName = (state.currentUser?.name || state.userProfile?.displayName || '').toLowerCase();
+    const emailPrefix = userEmail.split('@')[0].toLowerCase();
+    const firstName = userName.split(' ')[0];
+    
+    return (state.houses || []).filter(h => {
+        if (!h) return false;
+        // Check linkedUsers array with multiple match strategies
+        if (h.linkedUsers && Array.isArray(h.linkedUsers)) {
+            const match = h.linkedUsers.some(lu => {
+                if (typeof lu !== 'string') return false;
+                const luLower = lu.toLowerCase().trim();
+                // Direct match against UID, email, name
+                if (luLower === userId.toLowerCase()) return true;
+                if (luLower === userEmail) return true;
+                if (luLower === userName) return true;
+                // Match against email prefix (e.g. "esther" from "esther@email.com")
+                if (emailPrefix && emailPrefix.length >= 3 && luLower === emailPrefix) return true;
+                // Partial: "Esther Konjengbam" contains "esther"
+                if (firstName && firstName.length >= 3 && luLower.includes(firstName)) return true;
+                if (userName && userName.length >= 3 && luLower.includes(userName)) return true;
+                // Reverse: stored linkedUser "esther konjengbam" matches current user name
+                if (userName && userName.length >= 3 && luLower.includes(userName)) return true;
+                return false;
+            });
+            if (match) return true;
+        }
+        // Match by owner/tenant name
+        if (h.owner && userName && h.owner.toLowerCase().trim() === userName) return true;
+        if (h.tenant && userName && h.tenant.toLowerCase().trim() === userName) return true;
+        if (h.owner && firstName && h.owner.toLowerCase().includes(firstName)) return true;
+        if (h.tenant && firstName && h.tenant.toLowerCase().includes(firstName)) return true;
+        return false;
+    }).map(h => h.id).filter(Boolean);
+}
+
+// NEW: Get all user profiles from the group for display
+function getUserGroupMembers() {
+    if (state.userGroup?.members && state.userGroup.members.length > 0) {
+        return state.userGroup.members;
+    }
+    // Fallback: build from payers and profiles
+    const members = [];
+    if (state.currentUser) {
+        members.push({
+            uid: state.currentUser.uid || getCurrentUserId(),
+            displayName: state.currentUser.name || state.userProfile?.displayName || 'Me',
+            email: state.currentUser.email || ''
+        });
+    }
+    // Add other payers as group members — use displayName as uid for consistent matching
+    (state.payers || []).forEach(p => {
+        const name = p.trim();
+        if (!members.some(m => m.displayName.toLowerCase() === name.toLowerCase())) {
+            members.push({ uid: name, displayName: name, email: '' });
+        }
+    });
+    return members;
+}
+
+// NEW: Get transactions for a specific user (for budget/spender calculations)
+function getUserTransactions(userId) {
+    if (!state.transactions) return [];
+    return state.transactions.filter(tx => {
+        if (!tx.userId) return tx.payer && tx.payer.toLowerCase() === userId.toLowerCase();
+        return tx.userId.toLowerCase() === userId.toLowerCase();
+    });
+}
+
+// NEW: Get shared groceries transactions (all users can see)
+function getSharedGroceriesTransactions() {
+    if (!state.transactions) return [];
+    return state.transactions.filter(tx => 
+        tx.type === 'groceries' || 
+        (tx.type === 'expense' && tx.category === 'Groceries')
+    );
 }
 
 // Call this whenever transactions are modified to bust the cache
@@ -282,16 +440,50 @@ function invalidateTxCache() {
 }
 
 let _chartJsLoadPromise = null;
+let _chartJsRetries = 0;
+const MAX_CHARTJS_RETRIES = 3;
 async function loadChartJs() {
     if (typeof window.Chart !== 'undefined') return true;
     if (_chartJsLoadPromise) return _chartJsLoadPromise;
     
     _chartJsLoadPromise = new Promise((resolve) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-        script.onload = () => resolve(true);
-        script.onerror = () => { _chartJsLoadPromise = null; resolve(false); };
-        document.head.appendChild(script);
+        function tryLoad() {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+            // Set a timeout for slow connections (mobile data)
+            const timeout = setTimeout(() => {
+                if (script.parentNode) script.remove();
+                _chartJsRetries++;
+                if (_chartJsRetries < MAX_CHARTJS_RETRIES) {
+                    console.warn('Chart.js load timeout, retrying... (' + _chartJsRetries + '/' + MAX_CHARTJS_RETRIES + ')');
+                    tryLoad();
+                } else {
+                    console.warn('Chart.js failed to load after ' + MAX_CHARTJS_RETRIES + ' retries');
+                    _chartJsLoadPromise = null;
+                    _chartJsRetries = 0;
+                    resolve(false);
+                }
+            }, 8000);
+            script.onload = () => {
+                clearTimeout(timeout);
+                _chartJsRetries = 0;
+                resolve(true);
+            };
+            script.onerror = () => {
+                clearTimeout(timeout);
+                _chartJsRetries++;
+                if (_chartJsRetries < MAX_CHARTJS_RETRIES) {
+                    console.warn('Chart.js load failed, retrying... (' + _chartJsRetries + '/' + MAX_CHARTJS_RETRIES + ')');
+                    tryLoad();
+                } else {
+                    _chartJsLoadPromise = null;
+                    _chartJsRetries = 0;
+                    resolve(false);
+                }
+            };
+            document.head.appendChild(script);
+        }
+        tryLoad();
     });
     return _chartJsLoadPromise;
 }

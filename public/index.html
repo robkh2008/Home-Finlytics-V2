@@ -11,6 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Finlytics">
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
     <link rel="apple-touch-icon" href="/images/icon-192.png">
     <link rel="apple-touch-startup-image" href="/images/splash-ios.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
     <link rel="manifest" href="/manifest.json">
@@ -68,7 +69,7 @@
 
     <!-- Splash Screen -->
     <div id="splashScreen" class="splash-screen">
-        <div class="splash-icon"><span class="logo-mark logo-mark-splash"><i class="fas fa-chart-pie"></i></span></div>
+        <div class="splash-icon"><img src="/images/logo.svg" alt="Home Finlytics" width="80" height="80" style="border-radius:18px;box-shadow:0 8px 32px rgba(0,122,255,0.35);"></div>
         <h1 class="splash-title">Home Finlytics</h1>
         <p class="splash-tagline">Smart Finance Tracking</p>
         <div class="splash-loader"></div>
@@ -131,7 +132,7 @@
     <div id="appShell" class="app-shell" style="display:none;">
         <!-- Header -->
         <header class="app-header">
-            <span class="header-logo"><span class="logo-mark"><i class="fas fa-chart-pie"></i></span> <span class="logo-text">Home Finlytics</span></span>
+            <span class="header-logo" id="headerLogoLink" style="cursor:pointer;"><img src="/images/logo.svg" alt="HF" width="30" height="30" style="border-radius:8px;box-shadow:0 2px 8px rgba(0,122,255,0.3);"> <span class="logo-text">Home Finlytics</span></span>
             <div class="header-right">
                 <span id="headerUserName" class="header-user-name" style="display:none;"></span>
                 <button id="headerSyncBtn" class="icon-btn" title="Sync" aria-label="Sync Data Status"><i class="fas fa-cloud-arrow-up"></i>
@@ -149,32 +150,62 @@
             <!-- Dashboard Screen -->
             <section id="screenDashboard" class="screen active">
                 <div class="screen-scroll">
+                    <div class="screen-watermark">Finlytics</div>
                     <div id="dashboardSyncBadge" style="display:none; background:var(--warning); color:#ffffff; padding:8px 12px; border-radius:var(--radius-md); font-size:0.85rem; font-weight:600; align-items:center; justify-content:space-between; margin-bottom:4px; box-shadow:0 2px 8px rgba(255,149,0,0.3); animation: fadeSlideIn 0.3s ease-out;">
                         <span style="display:flex; align-items:center; gap:8px;"><i class="fas fa-cloud-upload-alt"></i> Pending sync...</span>
                         <button id="retrySyncBtn" style="background:rgba(0,0,0,0.15); color:#fff; border:none; padding:4px 10px; border-radius:6px; font-weight:600; font-size:0.75rem; cursor:pointer; transition:background 0.2s;"><i class="fas fa-sync-alt"></i> Retry</button>
                     </div>
+                    <!-- NEW: User Context Bar -->
+                    <div id="dashboardUserContext" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-tertiary);border-radius:var(--radius-md);margin-bottom:8px;font-size:0.8rem;">
+                        <span style="display:flex;align-items:center;gap:6px;">
+                            <i class="fas fa-user-circle" style="color:var(--accent);"></i>
+                            <span id="dashboardContextUser" style="font-weight:600;">Me</span>
+                            <span style="color:var(--text-tertiary);">·</span>
+                            <span id="dashboardContextGroup" style="color:var(--text-secondary);">My Household</span>
+                        </span>
+                        <span id="dashboardContextBadge" style="font-size:0.65rem;padding:2px 8px;border-radius:10px;background:rgba(108,92,231,0.15);color:var(--accent);"></span>
+                    </div>
+                    <!-- NEW: Quick Filter Chips -->
+                    <div id="dashboardFilterChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                        <button class="btn btn-xs chip-btn active" data-filter="all" style="border-radius:16px;padding:6px 14px;font-weight:600;">📊 All</button>
+                        <button class="btn btn-xs chip-btn" data-filter="mine" style="border-radius:16px;padding:6px 14px;">👤 My Expenses</button>
+                        <button class="btn btn-xs chip-btn" data-filter="kitchen" style="border-radius:16px;padding:6px 14px;">🍳 Kitchen</button>
+                        <button class="btn btn-xs chip-btn" data-filter="rent" style="border-radius:16px;padding:6px 14px;">🏠 Rent</button>
+                    </div>
                     <div class="summary-row" id="dashboardSummaryRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Expenses by Category</h3><div class="chart-wrap"><canvas id="dashPieChart" role="img" aria-label="Expenses by Category Doughnut Chart"></canvas></div></div>
+                    <!-- Summary Detail Popup (tap-to-expand) -->
+                    <div id="summaryDetailOverlay" class="summary-detail-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="Spending Breakdown">
+                        <div class="summary-detail-popup glass-card" id="summaryDetailPopup">
+                            <button id="summaryDetailClose" class="summary-detail-close" aria-label="Close detail">&times;</button>
+                        </div>
+                    </div>
+                    <div class="card glass-card card-watermark" data-card-mark="📊"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Expenses by Category</h3><div class="chart-wrap"><canvas id="dashPieChart" role="img" aria-label="Expenses by Category Doughnut Chart"></canvas></div></div>
                     <div class="quick-stats-row" id="dashboardQuickStats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;"></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-clock"></i> Recent Transactions</h3><div id="recentTxList"></div></div>
-                    <div class="card glass-card admin-only" id="dashboardLandingCard"><div id="dashboardLandingSummary"></div></div>
-                    <div class="card glass-card" id="budgetOverviewCard"><h3 class="card-title"><i class="fas fa-bullseye"></i> Budget Overview</h3><div id="budgetOverviewList"></div></div>
+                    <div class="card glass-card card-watermark" data-card-mark="⏱"><h3 class="card-title"><i class="fas fa-clock"></i> Recent Transactions</h3><div id="recentTxList"></div></div>
+                    <div class="card glass-card card-watermark" data-card-mark="🤝" id="dashboardLandingCard"><div id="dashboardLandingSummary"></div></div>
+                    <div class="card glass-card card-watermark" data-card-mark="🎯" id="budgetOverviewCard"><h3 class="card-title"><i class="fas fa-bullseye"></i> Budget Overview</h3><div id="budgetOverviewList"></div></div>
                 </div>
             </section>
 
             <!-- Transactions Screen -->
             <section id="screenTransactions" class="screen">
                 <div class="screen-scroll">
+                    <div class="screen-watermark">Transactions</div>
                     <div class="bulk-bar hidden" id="bulkActionBar"><span id="bulkCount">0 selected</span>
                         <button class="btn btn-danger btn-xs" id="bulkDeleteBtn"><i class="fas fa-trash"></i> Delete Selected</button>
                         <button class="btn btn-secondary btn-xs" id="bulkCancelBtn">Cancel</button></div>
                     <div class="card glass-card filter-card">
+                        <div class="filter-quick-row" style="display:flex;gap:6px;align-items:center;">
+                            <select id="filterType" class="form-select" style="flex:1;min-width:80px;"><option value="all">All</option><option value="expense">Expense</option><option value="groceries">Groceries</option></select>
+                            <input type="text" id="filterSearch" class="form-input" placeholder="🔍 Search..." style="flex:2;min-width:100px;" aria-label="Search transactions">
+                            <button type="button" id="toggleFilterBtn" class="icon-btn" title="More filters" aria-label="Toggle advanced filters" style="flex-shrink:0;"><i class="fas fa-sliders-h"></i></button>
+                        </div>
+                        <div id="filterAdvanced" style="display:none;margin-top:8px;">
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                            <select id="filterType" class="form-select" style="flex:1;min-width:90px;"><option value="all">All</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option></select>
                             <select id="filterCategory" class="form-select" style="flex:1;min-width:90px;"><option value="all">All Categories</option></select>
                             <select id="filterSubcategory" class="form-select" style="flex:1;min-width:90px;"><option value="all">All Subcats</option></select>
                             <select id="filterPayer" class="form-select" style="flex:1;min-width:90px;"><option value="all">All Payers</option></select>
-                            <input type="text" id="filterSearch" class="form-input" placeholder="Search..." style="flex:2;min-width:100px;" aria-label="Search transactions">
+                            <select id="filterLandingStatus" class="form-select" style="flex:1;min-width:90px;display:none;" title="Filter by landing status"><option value="all">All Landing</option><option value="active">Active</option><option value="returned">Returned</option><option value="writeoff">Written Off</option></select>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
                             <input type="date" id="filterDateFrom" class="form-input" style="flex:1;min-width:100px;" title="From" aria-label="Filter from date">
@@ -187,6 +218,7 @@
                             <button id="sortToggleBtn" class="icon-btn" title="Toggle order" aria-label="Toggle sort order"><i class="fas fa-arrow-down"></i></button>
                             <button id="clearFiltersBtn" class="btn btn-secondary btn-xs">Clear</button>
                             <button id="bulkSelectToggleBtn" class="btn btn-secondary btn-xs">Select</button>
+                        </div>
                         </div>
                     </div>
                     <div id="transactionList"></div>
@@ -201,32 +233,128 @@
             <!-- Add Transaction Screen -->
             <section id="screenAdd" class="screen">
                 <div class="screen-scroll">
-                    <div class="card glass-card form-card">
+                    <div class="screen-watermark">Add</div>
+                    <div class="card glass-card form-card card-watermark" data-card-mark="➕">
                         <h3 class="card-title"><i class="fas fa-plus-circle"></i> Add Transaction</h3>
                         <form id="addTransactionForm">
-                            <div class="form-group"><label for="addType">Type <span class="required">*</span></label><select id="addType" class="form-select" required><option value="">Select</option><option value="expense" class="admin-only">Expense</option><option value="groceries">Groceries</option><option value="rent" class="admin-only">Rent</option></select></div>
-                            <div class="form-group" id="addSplitGroup" style="display:none;"><label>Split equally with</label><div id="addSplitCheckboxes" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
-                            <div class="form-group" id="addHouseGroup" style="display:none;"><label for="addHouse">House</label><select id="addHouse" class="form-select"><option value="">Select</option></select><div id="addHouseAdminHint" style="display:none;font-size:0.7rem;color:var(--accent);margin-top:4px;"><i class="fas fa-lock"></i> Private — visible only to admin</div></div>
-                            <div class="form-group" id="addPayerGroup" style="display:none;"><label for="addPayerOverride">Payer</label><select id="addPayerOverride" class="form-select"><option value="">Me</option></select></div>
-                            <div class="form-group"><label for="addPaymentMethod">Payment Method</label><select id="addPaymentMethod" class="form-select"><option value="cash">Cash</option><option value="upi">UPI</option><option value="bank">Bank Transfer</option><option value="icici card">ICICI Card</option><option value="scb card">SCB Card</option></select></div>
-                            <div class="form-group"><label for="addCategory">Category <span class="required">*</span></label><select id="addCategory" class="form-select" required><option value="">Select Category</option></select></div>
-                            <div class="form-group"><label for="addSubcategory">Subcategory</label><select id="addSubcategory" class="form-select"><option value="">Select Subcategory</option></select></div>
-                            <div class="form-group" id="addBorrowerGroup" style="display:none;"><label for="addBorrower">Borrower Name</label><input type="text" id="addBorrower" class="form-input" placeholder="Who borrowed?"></div>
-                            <div class="form-group" id="addLandingStatusGroup" style="display:none;"><label for="addLandingStatus">Landing Status</label><select id="addLandingStatus" class="form-select"><option value="active">Active (Not Returned)</option><option value="returned">Returned</option><option value="writeoff">Written Off</option></select></div>
-                            <div class="form-group"><label for="addAmount">Amount (₹) <span class="required">*</span></label><input type="number" id="addAmount" class="form-input" placeholder="0.00" step="0.01" min="0.01" required></div>
-                            <div class="form-group"><label for="addDate">Date</label><input type="date" id="addDate" class="form-input" required></div>
-                            <div class="form-group"><label for="addNotes">Notes</label><textarea id="addNotes" class="form-textarea" rows="2" placeholder="Optional..."></textarea></div>
-                            <div class="form-group"><label for="addIsRecurring"><input type="checkbox" id="addIsRecurring"> Save as recurring template</label></div>
-                            <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-save"></i> Save</button>
+                            <!-- Type selector as icon cards -->
+                            <div class="form-section-title">📂 Type</div>
+                            <div class="type-selector-cards" id="addTypeCards">
+                                <div class="type-card active" data-type="expense">
+                                    <span class="type-card-icon">💸</span>
+                                    <span class="type-card-label">Expense</span>
+                                </div>
+                                <div class="type-card" data-type="groceries">
+                                    <span class="type-card-icon">🛒</span>
+                                    <span class="type-card-label">Groceries</span>
+                                </div>
+                                <div class="type-card" data-type="rent">
+                                    <span class="type-card-icon">🏠</span>
+                                    <span class="type-card-label">Rent</span>
+                                </div>
+                            </div>
+                            <input type="hidden" id="addType" value="expense">
+
+                            <!-- Amount & Date — side by side -->
+                            <div class="form-section-title">💰 Amount & Date</div>
+                            <div class="form-row-2col">
+                                <div class="form-group" style="flex:1.2;">
+                                    <label for="addAmount">Amount (₹) <span class="required">*</span></label>
+                                    <div class="amount-input-wrapper">
+                                        <span class="amount-currency-symbol">₹</span>
+                                        <input type="number" id="addAmount" class="form-input form-input-lg" placeholder="0.00" step="0.01" min="0.01" required inputmode="decimal">
+                                    </div>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label for="addDate">📅 Date</label>
+                                    <input type="date" id="addDate" class="form-input date-native-input" required>
+                                    <div class="date-quick-chips">
+                                        <button type="button" class="date-chip active" data-date="today">Today</button>
+                                        <button type="button" class="date-chip" data-date="yesterday">Yesterday</button>
+                                        <button type="button" class="date-chip" data-date="monthStart">1st</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Quick Select chips — RIGHT after amount/date, before dropdowns -->
+                            <div class="form-section-title">🏷️ Quick Category</div>
+                            <div class="quick-category-chips" id="quickCategoryChips">
+                                <span class="quick-cat-chip" data-cat="Food" data-sub="">🍜 Food</span>
+                                <span class="quick-cat-chip" data-cat="Transport" data-sub="">🚌 Transport</span>
+                                <span class="quick-cat-chip" data-cat="Shopping" data-sub="">🛍️ Shopping</span>
+                                <span class="quick-cat-chip" data-cat="Healthcare" data-sub="">🏥 Healthcare</span>
+                                <span class="quick-cat-chip" data-cat="Entertainment" data-sub="">🎮 Entertainment</span>
+                                <span class="quick-cat-chip" data-cat="Utilities" data-sub="">💡 Utilities</span>
+                                <span class="quick-cat-chip" data-cat="Groceries" data-sub="Vegetables">🥦 Vegetables</span>
+                                <span class="quick-cat-chip" data-cat="Groceries" data-sub="Meat">🥩 Meat</span>
+                                <span class="quick-cat-chip" data-cat="Groceries" data-sub="Dairy & Eggs">🥛 Dairy</span>
+                                <span class="quick-cat-chip" data-cat="Groceries" data-sub="Fish">🐟 Fish</span>
+                                <span class="quick-cat-chip" data-cat="Groceries" data-sub="Fruits">🍎 Fruits</span>
+                                <span class="quick-cat-chip" data-cat="House Rent" data-sub="House Rent">🏠 House Rent</span>
+                                <span class="quick-cat-chip" data-cat="House Rent" data-sub="Water Bill">💧 Water</span>
+                                <span class="quick-cat-chip" data-cat="House Rent" data-sub="Electric Bill">⚡ Electric</span>
+                                <span class="quick-cat-chip" data-cat="Landing" data-sub="Money Lent">📤 Landing</span>
+                            </div>
+
+                            <!-- Category & Subcategory dropdowns (fallback) -->
+                            <div class="form-section-title">📋 Details</div>
+                            <div class="form-row-2col">
+                                <div class="form-group" style="flex:1;">
+                                    <label for="addCategory">Category <span class="required">*</span></label>
+                                    <select id="addCategory" class="form-select" required><option value="">Select</option></select>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label for="addSubcategory">Subcategory</label>
+                                    <select id="addSubcategory" class="form-select"><option value="">Select</option></select>
+                                </div>
+                            </div>
+
+                            <!-- Payment Method -->
+                            <div class="form-group">
+                                <label for="addPaymentMethod">💳 Payment</label>
+                                <select id="addPaymentMethod" class="form-select">
+                                    <option value="cash">💵 Cash</option>
+                                    <option value="upi">📱 UPI</option>
+                                    <option value="bank">🏦 Bank Transfer</option>
+                                    <option value="icici card">💳 ICICI Card</option>
+                                    <option value="scb card">💳 SCB Card</option>
+                                </select>
+                            </div>
+
+                            <!-- Split / House / Borrower groups (conditional) -->
+                            <div class="form-group" id="addSplitGroup" style="display:none;"><label>👥 Split equally with</label><div id="addSplitCheckboxes" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
+                            <div class="form-group" id="addHouseGroup" style="display:none;"><label for="addHouse">🏠 House</label><select id="addHouse" class="form-select"><option value="">Select</option></select><div id="addHouseAdminHint" style="display:none;font-size:0.7rem;color:var(--accent);margin-top:4px;"><i class="fas fa-users"></i> Linked users will be shown here</div></div>
+                            <div class="form-group" id="addPayerGroup" style="display:none;"><label for="addPayerOverride">👤 Payer</label><select id="addPayerOverride" class="form-select"><option value="">Me</option></select></div>
+                            <div class="form-group" id="addBorrowerGroup" style="display:none;"><label for="addBorrower">👤 Borrower Name</label><input type="text" id="addBorrower" class="form-input" placeholder="Who borrowed?"></div>
+                            <div class="form-group" id="addLandingStatusGroup" style="display:none;"><label for="addLandingStatus">📋 Landing Status</label><select id="addLandingStatus" class="form-select"><option value="active">Active (Not Returned)</option><option value="returned">Returned</option><option value="writeoff">Written Off</option></select></div>
+
+                            <!-- Notes -->
+                            <div class="form-group">
+                                <label for="addNotes">📝 Notes</label>
+                                <textarea id="addNotes" class="form-textarea" rows="2" placeholder="Optional..."></textarea>
+                            </div>
+
+                            <!-- Recurring toggle -->
+                            <div class="form-group"><label for="addIsRecurring" class="checkbox-label"><input type="checkbox" id="addIsRecurring"> Save as recurring template</label></div>
                         </form>
                     </div>
-                    <div class="card glass-card" id="recurringTemplatesCard"><h3 class="card-title"><i class="fas fa-redo"></i> Quick Templates</h3><div id="recurringTemplatesList"></div></div>
+                    <div class="card glass-card card-watermark" id="recurringTemplatesCard" data-card-mark="🔄"><h3 class="card-title"><i class="fas fa-redo"></i> Quick Templates</h3><div id="recurringTemplatesList"></div></div>
+                    <!-- Spacer for sticky bar -->
+                    <div style="height:140px;"></div>
+                </div>
+                <!-- Sticky Save bar — always visible on mobile -->
+                <div class="sticky-save-bar" id="stickySaveBar">
+                    <div class="sticky-save-total" id="stickyAddTotal">Total: ₹0.00</div>
+                    <button type="submit" form="addTransactionForm" class="btn btn-primary" id="stickySaveBtn">
+                        <i class="fas fa-save"></i> Save
+                    </button>
                 </div>
             </section>
 
             <!-- Analytics Screen -->
             <section id="screenAnalytics" class="screen">
                 <div class="screen-scroll">
+                    <div class="screen-watermark">Analytics</div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:space-between;margin-bottom:12px;">
                         <div style="display:flex;gap:6px;" role="group" aria-label="Analytics time period selector">
                             <button class="btn btn-sm btn-secondary period-btn active" data-period="month" aria-pressed="true">Month</button>
@@ -236,57 +364,165 @@
                         <button class="btn btn-sm btn-primary" id="exportAnalyticsPDFBtn"><i class="fas fa-file-pdf"></i> Export PDF</button>
                     </div>
                     <div id="analyticsSummaryRow" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-users"></i> Spender Breakdown</h3><div class="chart-wrap"><canvas id="analyticsSpenderBreakdown" role="img" aria-label="Spender Breakdown Doughnut Chart"></canvas></div></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-handshake"></i> Split Balances</h3><div id="analyticsSplitBalances" style="padding:10px 0;"></div></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-balance-scale"></i> Expense Trend</h3><div class="chart-wrap"><canvas id="analyticsBalanceTrend" role="img" aria-label="Expense Trend Line Chart"></canvas></div></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-tags"></i> Top Categories</h3><div class="chart-wrap"><canvas id="analyticsTopCategories" role="img" aria-label="Top Categories Bar Chart"></canvas></div></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-layer-group"></i> Subcategory Groups</h3><div class="chart-wrap"><canvas id="analyticsSubcatGroups" role="img" aria-label="Subcategory Groups Doughnut Chart"></canvas></div></div>
-                    <div class="card glass-card"><h3 class="card-title"><i class="fas fa-calendar-alt"></i> Monthly Breakdown</h3><div class="chart-wrap"><canvas id="analyticsMonthlyBreakdown" role="img" aria-label="Monthly Breakdown Bar Chart"></canvas></div></div>
+                    <!-- Analytics Detail Popup (tap-to-expand) -->
+                    <div id="analyticsDetailOverlay" class="summary-detail-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="Expense Detail">
+                        <div class="summary-detail-popup glass-card" id="analyticsDetailPopup">
+                            <button id="analyticsDetailClose" class="summary-detail-close" aria-label="Close detail">&times;</button>
+                        </div>
+                    </div>
+                    <div class="card glass-card card-watermark" data-card-mark="�"><h3 class="card-title"><i class="fas fa-balance-scale"></i> Expense Trend</h3><div class="chart-wrap"><canvas id="analyticsBalanceTrend" role="img" aria-label="Expense Trend Line Chart"></canvas></div><div class="chart-fallback" style="display:none;text-align:center;padding:20px;color:var(--text-tertiary);"><i class="fas fa-chart-line" style="font-size:2rem;"></i><p>Chart loading...</p></div></div>
+                    <div class="card glass-card card-watermark" data-card-mark="🏷️"><h3 class="card-title"><i class="fas fa-tags"></i> Top Categories</h3><div class="chart-wrap"><canvas id="analyticsTopCategories" role="img" aria-label="Top Categories Bar Chart"></canvas></div><div class="chart-fallback" style="display:none;text-align:center;padding:20px;color:var(--text-tertiary);"><i class="fas fa-chart-bar" style="font-size:2rem;"></i><p>Chart loading...</p></div></div>
+                    <div class="card glass-card card-watermark" data-card-mark="📅"><h3 class="card-title"><i class="fas fa-calendar-alt"></i> Monthly Breakdown</h3><div class="chart-wrap"><canvas id="analyticsMonthlyBreakdown" role="img" aria-label="Monthly Breakdown Bar Chart"></canvas></div><div class="chart-fallback" style="display:none;text-align:center;padding:20px;color:var(--text-tertiary);"><i class="fas fa-chart-bar" style="font-size:2rem;"></i><p>Chart loading...</p></div></div>
+                    <div class="card glass-card card-watermark" data-card-mark="🤝"><h3 class="card-title"><i class="fas fa-handshake"></i> Split Balances</h3><div id="analyticsSplitBalances" style="padding:10px 0;"></div></div>
                 </div>
             </section>
 
             <!-- Receipt Screen -->
             <section id="screenReceipt" class="screen">
                 <div class="screen-scroll">
-                    <div class="card glass-card form-card">
-                        <h3 class="card-title"><i class="fas fa-file-invoice"></i> Rent Receipt</h3>
-                        <form id="receiptForm">
-                            <div class="form-group"><label for="receiptHouse">House <span class="required">*</span></label><select id="receiptHouse" class="form-select" required><option value="">Select</option></select></div>
-                            <div class="form-group"><label for="receiptMonth">Period (Month)</label><input type="month" id="receiptMonth" class="form-input" required></div>
-                            <div class="form-group"><label for="receiptIssueDate">Date of Issue</label><input type="date" id="receiptIssueDate" class="form-input" required></div>
-                            <div class="form-group"><label for="receiptPaymentMode">Payment Mode</label><select id="receiptPaymentMode" class="form-select">
-                                <option value="cash">Cash</option>
-                                <option value="bank transfer">Bank Transfer</option>
-                                <option value="cheque">Cheque</option>
-                                <option value="upi">UPI</option>
-                            </select></div>
-                            <div class="form-group"><label for="receiptRent">Rent (₹)</label><input type="number" id="receiptRent" class="form-input" readonly></div>
-                        <div><label for="includeWaterBill" style="cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="includeWaterBill"> Water Bill</label><input type="number" id="waterBillAmount" class="form-input" placeholder="Amount" style="display:none;margin-top:4px;" aria-label="Water bill amount"></div>
-                        <div><label for="includeMotorBill" style="cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="includeMotorBill"> Motor Bill</label><input type="number" id="motorBillAmount" class="form-input" placeholder="Amount" style="display:none;margin-top:4px;" aria-label="Motor bill amount"></div>
-                        <div><label for="includeElectricBill" style="cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="includeElectricBill"> Electric (<span id="electricRateLabel">₹8</span>/unit)</label><div style="display:none;margin-top:4px;" id="electricInputs"><input type="number" id="currentUnit" class="form-input" placeholder="Current units" aria-label="Electric current units"><input type="number" id="previousUnit" class="form-input" placeholder="Previous units" style="margin-top:4px;" aria-label="Electric previous units"><span id="electricCalcResult" style="font-size:var(--font-size-sm);color:var(--text-secondary);" aria-live="polite">Units: 0 | ₹0.00</span></div></div>
-                            <div class="form-group"><label for="adj1Amount">Adjustment 1</label><div style="display:flex;gap:4px;"><select id="adj1Type" class="form-select" style="width:60px;" aria-label="Adjustment 1 type"><option value="add">+</option><option value="deduct">-</option></select><input type="number" id="adj1Amount" class="form-input" placeholder="₹"><input type="text" id="adj1Comment" class="form-input" placeholder="Comment" aria-label="Adjustment 1 comment"></div></div>
-                            <div class="form-group"><label for="adj2Amount">Adjustment 2</label><div style="display:flex;gap:4px;"><select id="adj2Type" class="form-select" style="width:60px;" aria-label="Adjustment 2 type"><option value="add">+</option><option value="deduct">-</option></select><input type="number" id="adj2Amount" class="form-input" placeholder="₹"><input type="text" id="adj2Comment" class="form-input" placeholder="Comment" aria-label="Adjustment 2 comment"></div></div>
-                            <div id="receiptTotalPreview" style="font-weight:700;font-size:var(--font-size-lg);margin:8px 0;">Total: ₹0.00</div>
-                            <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-print"></i> Generate</button>
-                        </form>
-                    </div>
-                    <div id="receiptTotalPreviewForm" class="receipt-total-form" style="font-weight:700;font-size:var(--font-size-lg);margin:8px 0;" aria-live="polite">Total: ₹0.00</div>
+                    <div class="screen-watermark">Receipt</div>
+                    <div class="receipt-layout">
+                        <div class="card glass-card form-card card-watermark" data-card-mark="🧾">
+                            <h3 class="card-title"><i class="fas fa-file-invoice"></i> Rent Receipt</h3>
+                            <form id="receiptForm">
+                                <!-- House & Period — compact row -->
+                                <div class="form-section-title">🏠 House & Period</div>
+                                <div class="form-group"><label for="receiptHouse">House <span class="required">*</span></label><select id="receiptHouse" class="form-select" required><option value="">Select House</option></select></div>
+                                <div class="form-group">
+                                    <label for="receiptMonth">📅 Period</label>
+                                    <input type="month" id="receiptMonth" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="receiptIssueDate">📆 Issue Date</label>
+                                    <input type="date" id="receiptIssueDate" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="receiptPaymentMode">💳 Payment Mode</label>
+                                    <select id="receiptPaymentMode" class="form-select">
+                                        <option value="cash">💵 Cash</option>
+                                        <option value="upi">📱 UPI</option>
+                                        <option value="bank">🏦 Bank Transfer</option>
+                                        <option value="cheque">📝 Cheque</option>
+                                    </select>
+                                </div>
 
-                    <div class="card glass-card receipt-preview-card hidden" id="receiptPreviewCard">
-                        <h3 class="card-title"><i class="fas fa-eye"></i> Receipt Preview</h3>
+                                <!-- Rent Amount — BIG, thumb-friendly -->
+                                <div class="form-section-title">💰 Rent</div>
+                                <div class="form-group">
+                                    <div class="amount-input-wrapper">
+                                        <span class="amount-currency-symbol">₹</span>
+                                        <input type="number" id="receiptRent" class="form-input form-input-lg" placeholder="0.00" step="0.01" oninput="updateLiveReceiptPreview()">
+                                    </div>
+                                </div>
+
+                                <!-- Bills — collapsible toggle cards -->
+                                <div class="form-section-title">🔌 Bills</div>
+                                <div class="bill-toggle-cards">
+                                    <div class="bill-toggle-card" id="billCardWater">
+                                        <div class="bill-toggle-header" onclick="toggleBillCard('billCardWater')">
+                                            <span class="bill-icon">💧</span>
+                                            <span class="bill-label">Water Bill</span>
+                                            <div class="bill-toggle-switch"></div>
+                                        </div>
+                                        <div class="bill-toggle-body">
+                                            <input type="number" id="waterBillAmount" class="form-input" placeholder="Amount (₹)" aria-label="Water bill amount" oninput="updateLiveReceiptPreview()">
+                                        </div>
+                                    </div>
+                                    <div class="bill-toggle-card" id="billCardMotor">
+                                        <div class="bill-toggle-header" onclick="toggleBillCard('billCardMotor')">
+                                            <span class="bill-icon">🏍️</span>
+                                            <span class="bill-label">Motor Bill</span>
+                                            <div class="bill-toggle-switch"></div>
+                                        </div>
+                                        <div class="bill-toggle-body">
+                                            <input type="number" id="motorBillAmount" class="form-input" placeholder="Amount (₹)" aria-label="Motor bill amount" oninput="updateLiveReceiptPreview()">
+                                        </div>
+                                    </div>
+                                    <div class="bill-toggle-card" id="billCardElectric">
+                                        <div class="bill-toggle-header" onclick="toggleBillCard('billCardElectric')">
+                                            <span class="bill-icon">⚡</span>
+                                            <span class="bill-label">Electric <small style="color:var(--text-tertiary);font-weight:400;">(₹<span id="electricRateLabel">8</span>/unit)</small></span>
+                                            <div class="bill-toggle-switch"></div>
+                                        </div>
+                                        <div class="bill-toggle-body">
+                                            <div class="form-row-2col">
+                                                <div class="form-group" style="flex:1;margin-bottom:0;">
+                                                    <label for="currentUnit" style="font-size:0.7rem;">Current Units</label>
+                                                    <input type="number" id="currentUnit" class="form-input" placeholder="Current" aria-label="Electric current units" oninput="updateLiveReceiptPreview()">
+                                                </div>
+                                                <div class="form-group" style="flex:1;margin-bottom:0;">
+                                                    <label for="previousUnit" style="font-size:0.7rem;">Previous Units</label>
+                                                    <input type="number" id="previousUnit" class="form-input" placeholder="Previous" aria-label="Electric previous units" oninput="updateLiveReceiptPreview()">
+                                                </div>
+                                            </div>
+                                            <span id="electricCalcResult" style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-top:6px;" aria-live="polite">Units: 0 | ₹0.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Adjustments -->
+                                <div class="form-section-title">🔧 Adjustments</div>
+                                <div class="adj-row">
+                                    <label class="adj-label">Adj 1</label>
+                                    <div class="adj-toggle" data-hidden="adj1Type">
+                                        <button type="button" class="adj-toggle-btn active" data-val="add">+</button>
+                                        <button type="button" class="adj-toggle-btn" data-val="deduct">−</button>
+                                    </div>
+                                    <input type="hidden" id="adj1Type" value="add">
+                                    <input type="number" id="adj1Amount" class="form-input" placeholder="₹" oninput="updateLiveReceiptPreview()" style="flex:1;">
+                                    <input type="text" id="adj1Comment" class="form-input" placeholder="Reason" aria-label="Adjustment 1 comment" style="flex:1.5;">
+                                </div>
+                                <div class="adj-row">
+                                    <label class="adj-label">Adj 2</label>
+                                    <div class="adj-toggle" data-hidden="adj2Type">
+                                        <button type="button" class="adj-toggle-btn active" data-val="add">+</button>
+                                        <button type="button" class="adj-toggle-btn" data-val="deduct">−</button>
+                                    </div>
+                                    <input type="hidden" id="adj2Type" value="add">
+                                    <input type="number" id="adj2Amount" class="form-input" placeholder="₹" oninput="updateLiveReceiptPreview()" style="flex:1;">
+                                    <input type="text" id="adj2Comment" class="form-input" placeholder="Reason" aria-label="Adjustment 2 comment" style="flex:1.5;">
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Live Preview Panel — collapsible -->
+                        <div class="receipt-live-preview" id="receiptLivePreview">
+                            <div class="receipt-preview-header" id="receiptPreviewToggle" style="cursor:pointer;" onclick="toggleReceiptPreview()">
+                                <span>📄 Live Preview</span>
+                                <span class="preview-toggle-arrow" style="font-size:0.7rem;transition:transform 0.2s;">▼</span>
+                            </div>
+                            <div class="receipt-preview-body" id="receiptLivePreviewBody">
+                                <div class="rp-empty">🏠 Select a house and enter rent to see preview</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Generated Receipt (shown after Generate) -->
+                    <div class="card glass-card receipt-preview-card hidden card-watermark" id="receiptPreviewCard" data-card-mark="📄" style="margin-top:12px;">
+                        <h3 class="card-title"><i class="fas fa-eye"></i> Generated Receipt</h3>
                         <div class="receipt-paper" id="receiptPaper"></div>
-                        <div class="receipt-total-preview" style="margin-top:8px;"></div>
                         <button class="btn btn-secondary btn-full" id="printReceiptBtn" style="margin-top:8px;">
                             <i class="fas fa-print"></i> Print Receipt</button>
                     </div>
+
+                    <!-- Spacer for sticky bar -->
+                    <div style="height:140px;"></div>
+                </div>
+                <!-- Sticky Generate bar -->
+                <div class="sticky-save-bar" id="receiptStickyBar">
+                    <div class="sticky-save-total" id="receiptLiveTotal">Total: ₹0.00</div>
+                    <button type="submit" form="receiptForm" class="btn btn-primary">
+                        <i class="fas fa-print"></i> Generate
+                    </button>
                 </div>
             </section>
 
             <!-- Settings Screen -->
             <section id="screenSettings" class="screen">
                 <div class="screen-scroll">
+                    <div class="screen-watermark">Settings</div>
                     <!-- Theme Toggle -->
-                    <div class="card glass-card settings-card">
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="🎨">
                         <h3 class="card-title"><i class="fas fa-palette"></i> Appearance</h3>
                         <div style="display:flex;align-items:center;justify-content:space-between;">
                             <span>Dark Mode</span>
@@ -305,33 +541,8 @@
                             </select>
                         </div>
                     </div>
-                    <!-- Security -->
-                    <div class="card glass-card settings-card">
-                        <h3 class="card-title"><i class="fas fa-shield-alt"></i> Security</h3>
-                        <div style="display:flex;align-items:center;justify-content:space-between;">
-                            <div>
-                                <div style="font-weight:500;">App Lock</div>
-                                <div style="font-size:0.75rem;color:var(--text-secondary);">Require Biometrics/PIN to open</div>
-                            </div>
-                            <div class="toggle-switch-wrap" id="appLockToggleWrap" style="cursor:pointer;" role="switch" tabindex="0" aria-checked="false" aria-label="Toggle App Lock">
-                                <div class="toggle-switch-track" id="appLockToggleTrack">
-                                    <div class="toggle-switch-thumb"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="settingsSignOutWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
-                            <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Logged in to Cloud Sync as <strong id="settingsUserEmail" style="color:var(--text-primary);"></strong>.</p>
-                            <button id="settingsResetPwdBtn" class="btn btn-secondary btn-full" style="margin-bottom:8px;"><i class="fas fa-key"></i> Reset Password</button>
-                            <button id="settingsSignOutBtn" class="btn btn-danger btn-full"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
-                            <button id="settingsDeleteAccountBtn" class="btn btn-danger btn-full admin-only" style="margin-top:8px;"><i class="fas fa-user-times"></i> Delete Account</button>
-                        </div>
-                        <div id="settingsSignInWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
-                            <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Sign in to securely sync your data across devices.</p>
-                            <button id="settingsSignInBtn" class="btn btn-primary btn-full"><i class="fas fa-sign-in-alt"></i> Sign In to Cloud Sync</button>
-                        </div>
-                    </div>
                     <!-- Currency -->
-                    <div class="card glass-card settings-card">
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="💰">
                         <h3 class="card-title"><i class="fas fa-coins"></i> Currency</h3>
                         <select id="currencySelect" class="form-select" aria-label="Select Currency">
                             <option value="₹">₹ Indian Rupee</option>
@@ -341,14 +552,29 @@
                             <option value="¥">¥ Chinese Yuan</option>
                         </select>
                     </div>
+                    <!-- Manage Payment Modes -->
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="💳">
+                        <h3 class="card-title"><i class="fas fa-credit-card"></i> Manage Payment Modes</h3>
+                        <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">Add or remove payment methods used in transactions.</p>
+                        <div id="paymentModeList"></div>
+                        <div style="display:flex;gap:4px;margin-top:8px;">
+                            <input type="text" id="newPaymentMode" class="form-input" placeholder="Add payment mode" aria-label="New payment mode">
+                            <button id="addPaymentModeBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
+                        </div>
+                    </div>
                     <!-- Budgets -->
-                    <div class="card glass-card settings-card">
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="🎯">
                         <h3 class="card-title"><i class="fas fa-bullseye"></i> Monthly Budget Limits</h3>
+                        <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">Each user sets their own budget. All budgets are visible to everyone in the household.</p>
+                        <div id="budgetUserSelector" style="margin-bottom:8px;">
+                            <label for="budgetForUser" style="font-size:0.8rem;">Budget for:</label>
+                            <select id="budgetForUser" class="form-select" style="width:100%;margin-top:4px;"></select>
+                        </div>
                         <div id="budgetSettingsList"></div>
-                        <div class="admin-only" style="display:flex;gap:6px;margin-top:8px;"><select id="budgetCatSelect" class="form-select" style="flex:1;" aria-label="Budget Category"></select><input type="number" id="budgetLimitInput" class="form-input" placeholder="Limit ₹" style="width:100px;" aria-label="Budget Limit Amount"><button id="addBudgetBtn" class="btn btn-primary btn-xs">Set</button></div>
+                        <div style="display:flex;gap:6px;margin-top:8px;"><select id="budgetCatSelect" class="form-select" style="flex:1;" aria-label="Budget Category"></select><input type="number" id="budgetLimitInput" class="form-input" placeholder="Limit ₹" style="width:100px;" aria-label="Budget Limit Amount"><button id="addBudgetBtn" class="btn btn-primary btn-xs">Set</button></div>
                     </div>
                     <!-- Manage Categories & Subcategories -->
-                    <div class="card glass-card settings-card">
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="🏷️">
                         <h3 class="card-title"><i class="fas fa-tags"></i> Manage Categories & Subcategories</h3>
                         <div class="form-group"><label for="settingsCatType">Category Type</label>
                             <select id="settingsCatType" class="form-select">
@@ -367,9 +593,9 @@
                             <div id="subcatList"></div>
                         <div class="admin-only" style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
                                 <input type="text" id="newSubcatName" class="form-input" placeholder="New subcategory" aria-label="New subcategory name" style="flex:1;min-width:120px;">
-                                <div style="position:relative;display:inline-block;">
-                                    <input type="text" id="newSubcatIcon" class="form-input" placeholder="😀" readonly style="width:44px;text-align:center;cursor:pointer;">
-                                    <div id="subcatEmojiPicker" style="display:none;position:absolute;top:100%;left:0;width:220px;background:var(--card-bg);backdrop-filter:blur(10px);border:1px solid var(--divider);border-radius:8px;padding:6px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,0.2);flex-wrap:wrap;gap:3px;max-height:140px;overflow-y:auto;"></div>
+                                <div style="position:relative;display:inline-block;overflow:visible;">
+                                    <input type="text" id="newSubcatIcon" class="form-input" placeholder="😀" readonly style="width:60px;text-align:center;cursor:pointer;font-size:1.2rem;">
+                                    <div id="subcatEmojiPicker" style="display:none;position:absolute;top:100%;left:0;width:220px;background:var(--card-bg);backdrop-filter:blur(10px);border:1px solid var(--divider);border-radius:8px;padding:6px;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.2);flex-wrap:wrap;gap:3px;max-height:140px;overflow-y:auto;"></div>
                                 </div>
                                 <button id="addSubcatBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
                             </div>
@@ -382,24 +608,22 @@
                     <button id="restoreDefaultCatsBtn" class="btn btn-secondary btn-full admin-only" style="margin-top:12px;"><i class="fas fa-undo"></i> Restore Default Categories</button>
                     </div>
                     <!-- Manage Houses -->
-                    <div class="card glass-card settings-card">
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="🏠">
                     <h3 class="card-title"><i class="fas fa-home"></i> Manage Houses & Bills</h3>
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                        <label for="settingsElectricRate">Electricity Rate (per unit)</label>
-                        <div style="display:flex;align-items:center;gap:4px;">
-                            <span class="currency-symbol">₹</span>
-                            <input type="number" id="settingsElectricRate" class="form-input" style="width:80px;" min="0" step="0.1">
+                        <div id="settingsHouseList"></div>
+                        <div class="admin-only" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"><input type="text" id="newHouseNo" class="form-input" placeholder="No." style="width:56px;" aria-label="New house number"><input type="text" id="newHouseAddress" class="form-input" placeholder="Address" style="flex:1;min-width:110px;" aria-label="New house address"><input type="text" id="newHouseTenant" class="form-input" placeholder="Tenant" style="width:85px;" aria-label="New house tenant"><input type="text" id="newHouseOwner" class="form-input" placeholder="Owner" style="width:85px;" aria-label="New house owner"><input type="number" id="newHouseRent" class="form-input" placeholder="Rent ₹" style="width:90px;" aria-label="New house rent"><input type="number" id="newHouseWater" class="form-input" placeholder="Water ₹" style="width:90px;" aria-label="Default water bill"><input type="number" id="newHouseMotor" class="form-input" placeholder="Motor ₹" style="width:90px;" aria-label="Default motor bill"><input type="number" id="newHouseElecRate" class="form-input" placeholder="₹/u" style="width:64px;" step="0.1" aria-label="Electric rate per unit"><button id="addHouseBtn" class="btn btn-primary btn-xs">Add</button></div>
+                        <div id="houseLinkedUsersSection" class="admin-only" style="margin-top:8px;font-size:0.75rem;color:var(--text-secondary);">
+                            <label style="font-weight:600;">Linked Users (who can see this house)</label>
+                            <div id="houseLinkedUsersCheckboxes" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;"></div>
                         </div>
                     </div>
-                        <div id="settingsHouseList"></div>
-                        <div class="admin-only" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"><input type="text" id="newHouseNo" class="form-input" placeholder="No." style="width:60px;" aria-label="New house number"><input type="text" id="newHouseAddress" class="form-input" placeholder="Address" style="flex:1;" aria-label="New house address"><input type="text" id="newHouseTenant" class="form-input" placeholder="Tenant" style="width:80px;" aria-label="New house tenant"><input type="text" id="newHouseOwner" class="form-input" placeholder="Owner" style="width:80px;" aria-label="New house owner"><input type="number" id="newHouseRent" class="form-input" placeholder="Rent ₹" style="width:80px;" aria-label="New house rent"><label style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-secondary);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="newHouseAdminResidence" style="accent-color:var(--accent);"> My Residence</label><button id="addHouseBtn" class="btn btn-primary btn-xs">Add</button></div>
-                    </div>
                     <!-- Manage Payers -->
-                    <div class="card glass-card settings-card admin-only">
-                        <h3 class="card-title"><i class="fas fa-users"></i> Manage Payer Names</h3>
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="👥">
+                        <h3 class="card-title"><i class="fas fa-users"></i> Household Members</h3>
+                        <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">Manage names of people in your household for expense tracking.</p>
                         <div id="payerList"></div>
                         <div style="display:flex;gap:4px;margin-top:8px;">
-                            <input type="text" id="newPayerName" class="form-input" placeholder="Add payer name" aria-label="New payer name">
+                            <input type="text" id="newPayerName" class="form-input" placeholder="Add member name" aria-label="New payer name">
                             <button id="addPayerBtn" class="btn btn-primary btn-xs"><i class="fas fa-plus"></i> Add</button>
                         </div>
                     </div>
@@ -426,8 +650,33 @@
                         <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Clear the local application cache to force the app to download the latest updates. This will also reload the page.</p>
                         <button id="clearCacheBtn" class="btn btn-secondary btn-full"><i class="fas fa-trash-alt"></i> Clear App Cache</button>
                     </div>
+                    <!-- Security -->
+                    <div class="card glass-card settings-card card-watermark" data-card-mark="🔒">
+                        <h3 class="card-title"><i class="fas fa-shield-alt"></i> Security</h3>
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <div>
+                                <div style="font-weight:500;">App Lock</div>
+                                <div style="font-size:0.75rem;color:var(--text-secondary);">Require Biometrics/PIN to open</div>
+                            </div>
+                            <div class="toggle-switch-wrap" id="appLockToggleWrap" style="cursor:pointer;" role="switch" tabindex="0" aria-checked="false" aria-label="Toggle App Lock">
+                                <div class="toggle-switch-track" id="appLockToggleTrack">
+                                    <div class="toggle-switch-thumb"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="settingsSignOutWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
+                            <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Logged in to Cloud Sync as <strong id="settingsUserEmail" style="color:var(--text-primary);"></strong>.</p>
+                            <button id="settingsResetPwdBtn" class="btn btn-secondary btn-full" style="margin-bottom:8px;"><i class="fas fa-key"></i> Reset Password</button>
+                            <button id="settingsSignOutBtn" class="btn btn-danger btn-full"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+                            <button id="settingsDeleteAccountBtn" class="btn btn-danger btn-full admin-only" style="margin-top:8px;"><i class="fas fa-user-times"></i> Delete Account</button>
+                        </div>
+                        <div id="settingsSignInWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
+                            <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Sign in to securely sync your data across devices.</p>
+                            <button id="settingsSignInBtn" class="btn btn-primary btn-full"><i class="fas fa-sign-in-alt"></i> Sign In to Cloud Sync</button>
+                        </div>
+                    </div>
                     <!-- Data Management -->
-                    <div class="card glass-card settings-card admin-only">
+                    <div class="card glass-card settings-card">
                         <h3 class="card-title"><i class="fas fa-database"></i> Data Management</h3>
                         <button id="exportDataBtn" class="btn btn-secondary btn-full"><i class="fas fa-download"></i> Export JSON</button>
                         <button id="exportCSVBtn" class="btn btn-secondary btn-full"><i class="fas fa-file-csv"></i> Export CSV</button>
@@ -444,25 +693,25 @@
         <!-- Bottom Tab Bar (no stray buttons) -->
         <nav class="bottom-tab-bar">
             <button class="tab-btn active" data-screen="screenDashboard"><i class="fas fa-th-large"></i><span>Home</span></button>
-            <button class="tab-btn" data-screen="screenTransactions"><i class="fas fa-list-ul"></i><span>Transactions</span></button>
+            <button class="tab-btn" data-screen="screenTransactions"><i class="fas fa-list-ul"></i><span>History</span></button>
             <button class="tab-btn tab-btn-add" data-screen="screenAdd"><div class="add-btn-circle"><i class="fas fa-plus"></i></div><span>Add</span></button>
-            <button class="tab-btn" data-screen="screenAnalytics"><i class="fas fa-chart-bar"></i><span>Analytics</span></button>
+            <button class="tab-btn" data-screen="screenAnalytics"><i class="fas fa-chart-bar"></i><span>Stats</span></button>
             <button class="tab-btn" data-screen="screenReceipt"><i class="fas fa-file-invoice"></i><span>Receipt</span></button>
         </nav>
     </div>
 
     <!-- JavaScript Files (order matters) -->
-    <script src="/data/defaultData.js"></script>
-    <script src="/js/utils.js"></script>
-    <script src="/js/categories.js"></script>
-    <script src="/js/dashboard.js"></script>
-    <script src="/js/transactions.js"></script>
-    <script src="/js/addTransaction.js"></script>
-    <script src="/js/reports.js"></script>
-    <script src="/js/receiptGenerator.js"></script>
-    <script src="/js/settings.js"></script>
-    <script src="/js/app.js"></script>
-    <script type="module" src="/js/firebase-sync.js"></script>
+    <script src="/data/defaultData.js?v=4"></script>
+    <script src="/js/utils.js?v=4"></script>
+    <script src="/js/categories.js?v=4"></script>
+    <script src="/js/dashboard.js?v=5"></script>
+    <script src="/js/transactions.js?v=4"></script>
+    <script src="/js/addTransaction.js?v=6"></script>
+    <script src="/js/reports.js?v=6"></script>
+    <script src="/js/receiptGenerator.js?v=5"></script>
+    <script src="/js/settings.js?v=5"></script>
+    <script src="/js/app.js?v=8"></script>
+    <script type="module" src="/js/firebase-sync.js?v=4"></script>
 
     <!-- Register Service Worker for PWA -->
     <script>

@@ -99,12 +99,14 @@ function getFilteredTransactions() {
     const fDateTo = document.getElementById('filterDateTo')?.value;
     const fAmtMin = parseFloat(document.getElementById('filterAmountMin')?.value);
     const fAmtMax = parseFloat(document.getElementById('filterAmountMax')?.value);
+    const fLandingStatus = document.getElementById('filterLandingStatus')?.value || 'all';
     const sortBy = document.getElementById('sortBy')?.value || 'date';
 
     if (fType !== 'all') txs = txs.filter(t => t.type === fType);
     if (fCat !== 'all') txs = txs.filter(t => (t.category || '').toLowerCase() === fCat.toLowerCase());
     if (fSub !== 'all') txs = txs.filter(t => (t.subcategory || '').toLowerCase() === fSub.toLowerCase());
     if (fPayer !== 'all') txs = txs.filter(t => (t.payer || '').toLowerCase() === fPayer.toLowerCase());
+    if (fLandingStatus !== 'all') txs = txs.filter(t => (t.landingStatus || 'active') === fLandingStatus);
     if (fSearch) txs = txs.filter(t => 
         ((t.category || '') + ' ' + (t.subcategory || '') + ' ' + (t.notes || '') + ' ' + (t.payer || '') + ' ' + (t.paymentMethod || '')).toLowerCase().includes(fSearch)
     );
@@ -176,9 +178,10 @@ function _refreshTransactionListNow() {
                         <strong>${escapeHTML(t.subcategory || t.category || 'N/A')}</strong>
                         <span style="font-weight:700;color:${amountColor};">${amountPrefix}${formatCurrency(t.amount)}</span>
                     </div>
-                    ${t.subcategory ? `<div style="font-size:var(--font-size-sm);color:var(--text-secondary);">${hasGroup ? `<span class="subcat-filter-tag" data-filter="${escapeHTML(group)}:" style="cursor:pointer;color:var(--accent);text-decoration:underline dotted;">${escapeHTML(t.category)} · Filter by ${escapeHTML(t.subcategory.split(':').slice(1).join(':').trim())}</span>` : `<span>${escapeHTML(t.category)}</span>`}</div>` : ''}
+                    ${t.subcategory ? `<div style="font-size:var(--font-size-sm);color:var(--text-secondary);">${hasGroup ? `<span class="subcat-filter-tag" data-filter="${escapeHTML(group)}:" style="cursor:pointer;color:var(--accent);text-decoration:underline dotted;">${escapeHTML(t.category)} · Filter by ${escapeHTML(t.subcategory.split(':').slice(1).join(':').trim())}</span>` : `<span>${escapeHTML(t.category)}</span>`}${(t.type === 'groceries' || t.category === 'Groceries') ? ' <span style="font-size:0.55rem;background:rgba(52,199,89,0.2);color:var(--success);padding:1px 5px;border-radius:4px;">🍳 shared</span>' : ''}</div>` : ''}
                     <div style="font-size:var(--font-size-sm);color:var(--text-tertiary);">
                         ${t.date} · ${t.type}${t.payer ? ' · ' + escapeHTML(t.payer) : ''}${t.paymentMethod ? ' · ' + escapeHTML(t.paymentMethod.toUpperCase()) : ''}
+                        ${t.userId && t.userId !== getCurrentUserId() && t.type !== 'groceries' && t.category !== 'Groceries' ? ` · <span style="color:var(--accent);">${escapeHTML(t.payer || 'other')}</span>` : ''}
                         ${t.notes ? ` · ${escapeHTML(t.notes.substring(0, 40))}${t.notes.length > 40 ? '...' : ''}` : ''}
                     </div>
                 </div>
@@ -242,7 +245,7 @@ function attachTransactionEvents(container) {
             }
         });
 
-        // Bulk select & Tap-to-edit
+        // Bulk select & Tap-to-view-detail
         row.addEventListener('click', e => {
             if (state.bulkSelectMode) {
                 const cb = row.querySelector('.bulk-checkbox');
@@ -250,11 +253,9 @@ function attachTransactionEvents(container) {
                     cb.checked = !cb.checked;
                     cb.dispatchEvent(new Event('change'));
                 }
-            } else {
-                // If not bulk selecting or clicking a swipe action, open the edit screen
-                if (!e.target.closest('.tx-swipe-actions') && !row.classList.contains('swiped')) {
-                    editTransactionUI(id);
-                }
+            } else if (!e.target.closest('.tx-swipe-actions') && !row.classList.contains('swiped')) {
+                // Toggle transaction detail expansion
+                toggleTransactionDetail(id, row);
             }
         });
 
@@ -397,3 +398,118 @@ function editTransactionUI(id) {
         showToast('Editing transaction...', 'edit');
     }
 }
+
+// NEW: Toggle a detail panel below a transaction row
+function toggleTransactionDetail(id, rowElement) {
+    const tx = getVisibleTransactions().find(t => t.id === id);
+    if (!tx) return;
+    
+    const currentUserId = getCurrentUserId();
+    const userName = state.currentUser?.name || '';
+    const isMine = (tx.userId === currentUserId) || (!tx.userId && tx.payer === userName);
+    const isShared = tx.type === 'groceries' || tx.category === 'Groceries';
+    
+    // Check if detail panel already exists
+    const existingPanel = rowElement.nextElementSibling;
+    if (existingPanel && existingPanel.classList.contains('tx-detail-panel')) {
+        // Toggle off — remove it
+        existingPanel.remove();
+        rowElement.style.borderRadius = '';
+        rowElement.style.marginBottom = '6px';
+        return;
+    }
+    
+    // Close any other open detail panel
+    document.querySelectorAll('.tx-detail-panel').forEach(p => p.remove());
+    document.querySelectorAll('.tx-row').forEach(r => {
+        r.style.borderRadius = '';
+        r.style.marginBottom = '6px';
+    });
+    
+    // Build detail panel
+    const house = tx.houseId ? (state.houses || []).find(h => h.id === tx.houseId) : null;
+    const catIcon = getCategoryIcon(tx.category || '', tx.type === 'rent' ? 'expense' : tx.type);
+    const subIcon = getSubcategoryIcon(tx.subcategory, tx.category);
+    const displayIcon = subIcon || catIcon;
+    
+    const detailHTML = `
+        <div class="tx-detail-panel glass-card" style="margin-bottom:6px;padding:16px;border-radius:0 0 12px 12px;border-top:none;animation:slideDown 0.2s ease;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                <span style="font-size:2rem;">${displayIcon || '📄'}</span>
+                <div>
+                    <div style="font-weight:700;font-size:1.1rem;">${escapeHTML(tx.subcategory || tx.category || 'N/A')}</div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">${escapeHTML(tx.category || '')} · ${tx.type}</div>
+                </div>
+                <div style="margin-left:auto;font-weight:700;font-size:1.2rem;color:var(--danger);">-${formatCurrency(tx.amount)}</div>
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.8rem;">
+                <div><span style="color:var(--text-tertiary);">Date:</span> <strong>${tx.date}</strong></div>
+                <div><span style="color:var(--text-tertiary);">Payer:</span> <strong>${escapeHTML(tx.payer || 'Unknown')}</strong>${isShared ? ' <span class="shared-badge">🍳 shared</span>' : (isMine ? '' : ' <span class="user-badge">other</span>')}</div>
+                <div><span style="color:var(--text-tertiary);">Payment:</span> <strong>${escapeHTML((tx.paymentMethod || 'cash').toUpperCase())}</strong></div>
+                <div><span style="color:var(--text-tertiary);">Type:</span> <strong>${tx.type}</strong></div>
+                ${tx.notes ? `<div style="grid-column:1/-1;"><span style="color:var(--text-tertiary);">Notes:</span> <span style="font-style:italic;">${escapeHTML(tx.notes)}</span></div>` : ''}
+                ${house ? `<div style="grid-column:1/-1;"><span style="color:var(--text-tertiary);">House:</span> <strong>H${escapeHTML(house.houseNo)} — ${escapeHTML(house.tenant)}</strong> · Owner: ${escapeHTML(house.owner)}</div>` : ''}
+                ${tx.borrower ? `<div style="grid-column:1/-1;"><span style="color:var(--text-tertiary);">Borrower:</span> <strong>${escapeHTML(tx.borrower)}</strong> · Status: ${escapeHTML(tx.landingStatus || 'active')}</div>` : ''}
+                ${tx.splitWith ? `<div style="grid-column:1/-1;"><span style="color:var(--text-tertiary);">Split with:</span> <strong>${escapeHTML(Array.isArray(tx.splitWith) ? tx.splitWith.join(', ') : tx.splitWith)}</strong></div>` : ''}
+            </div>
+            
+            <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+                ${isMine || isShared ? `<button class="btn btn-xs btn-primary tx-detail-edit" data-id="${tx.id}"><i class="fas fa-edit"></i> Edit</button>` : ''}
+                ${isMine ? `<button class="btn btn-xs btn-danger tx-detail-delete" data-id="${tx.id}"><i class="fas fa-trash"></i> Delete</button>` : ''}
+                ${!isMine && !isShared ? '<span style="font-size:0.7rem;color:var(--text-tertiary);align-self:center;">View only — added by ' + escapeHTML(tx.payer || 'another user') + '</span>' : ''}
+            </div>
+        </div>
+    `;
+    
+    // Insert after the row
+    rowElement.insertAdjacentHTML('afterend', detailHTML);
+    rowElement.style.borderRadius = '12px 12px 0 0';
+    rowElement.style.marginBottom = '0';
+    
+    // Attach edit/delete handlers
+    const detailPanel = rowElement.nextElementSibling;
+    detailPanel.querySelector('.tx-detail-edit')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editTransactionUI(id);
+    });
+    detailPanel.querySelector('.tx-detail-delete')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showConfirm('Delete Transaction', 'Are you sure you want to delete this?', 'trash-alt', () => deleteTransaction(id));
+    });
+}
+
+// NEW: Navigate from dashboard to a specific transaction in the list
+function navigateToTransaction(txId) {
+    // Switch to transactions screen
+    navigateTo('screenTransactions');
+    
+    // Clear all filters to ensure the transaction is visible
+    ['filterType', 'filterCategory', 'filterSubcategory', 'filterPayer', 'filterSearch', 'filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = el.tagName === 'SELECT' ? 'all' : '';
+    });
+    
+    // Refresh the list
+    if (typeof refreshTransactionList === 'function') refreshTransactionList();
+    
+    // Wait for DOM update, then find and expand the transaction
+    setTimeout(() => {
+        const row = document.querySelector(`.tx-row[data-id="${txId}"]`);
+        if (row) {
+            // Scroll to the row
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Highlight briefly
+            row.style.transition = 'background 0.3s';
+            row.style.background = 'rgba(108,92,231,0.2)';
+            setTimeout(() => { row.style.background = ''; }, 1500);
+            // Expand detail
+            toggleTransactionDetail(txId, row);
+        } else {
+            showToast('Transaction not found in current view', 'exclamation-triangle');
+        }
+    }, 300);
+}
+
+// Expose for dashboard use
+window.navigateToTransaction = navigateToTransaction;

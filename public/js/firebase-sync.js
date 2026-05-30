@@ -52,28 +52,20 @@ export function saveStateToFirebase(appState) {
     if (appState.transactions) {
         appState.transactions.forEach(tx => {
             if (tx && tx.id) {
-                // Public transactions: groceries, rent (non-admin house), lent, returned, settlement
-                let isPublicType = tx.type === 'groceries' ||
+                // USER-CENTRIC MODEL:
+                // Public/shared: groceries, lent, returned, settlement (visible to all)
+                // Private: expense, rent (visible based on userId/house linking)
+                const isSharedType = tx.type === 'groceries' ||
                                    tx.type === 'lent' || tx.type === 'returned' || tx.type === 'settlement';
-                // Check if this transaction is house rent (either type:'rent' or expense with 'House Rent' category)
-                const isHouseRent = tx.type === 'rent' || (tx.type === 'expense' && tx.category === 'House Rent');
-                if (isHouseRent) {
-                    const house = housesMap[tx.houseId];
-                    if (house && house.isAdminHouse) {
-                        isPublicType = false; // Admin house rent → private
-                    } else {
-                        isPublicType = true;  // Tenant house rent → public
-                    }
-                }
-                if (isPublicType) {
+                
+                if (isSharedType) {
                     updates[`/appState/transactions_public/${tx.id}`] = tx;
                     currentPublicIds.add(tx.id);
                 } else if (tx.type === 'expense' || tx.type === 'rent') {
-                    // Private: expense transactions + admin house rent transactions
+                    // Private: user's own expenses and rent transactions
                     updates[`/appState/transactions_private/${tx.id}`] = tx;
                     currentPrivateIds.add(tx.id);
                 }
-                // Note: 'income' type transactions are not currently synced
             }
         });
     }
@@ -103,8 +95,10 @@ export function saveStateToFirebase(appState) {
         });
     }
 
-    // Non-transactional data should only be written by admin.
-    // OPTIMIZATION: Only write settings that actually changed (not all on every save)
+    // Non-transactional data: budgets and payers writable by all
+    updates['/appState/budgets'] = appState.budgets || {};
+    updates['/appState/payers'] = appState.payers || [];
+    
     if (appState.userRole === 'admin') {
         if (!window._lastWrittenSettings || JSON.stringify(window._lastWrittenSettings.houses) !== JSON.stringify(housesObj)) {
             updates['/appState/houses'] = housesObj;
@@ -112,21 +106,10 @@ export function saveStateToFirebase(appState) {
         if (!window._lastWrittenSettings || JSON.stringify(window._lastWrittenSettings.categories) !== JSON.stringify(appState.categories || {})) {
             updates['/appState/categories'] = appState.categories || {};
         }
-        if (!window._lastWrittenSettings || JSON.stringify(window._lastWrittenSettings.budgets) !== JSON.stringify(appState.budgets || {})) {
-            updates['/appState/budgets'] = appState.budgets || {};
-        }
         updates['/appState/recurringTemplates'] = appState.recurringTemplates || [];
-        updates['/appState/payers'] = appState.payers || [];
         updates['/appState/currency'] = appState.currency || '₹';
         updates['/appState/electricRate'] = appState.electricRate || 8;
         updates['/appState/transactions'] = null; // WIPE LEGACY DATA
-        
-        // Remember what we wrote
-        window._lastWrittenSettings = {
-            houses: JSON.parse(JSON.stringify(housesObj)),
-            categories: JSON.parse(JSON.stringify(appState.categories || {})),
-            budgets: JSON.parse(JSON.stringify(appState.budgets || {}))
-        };
     }
 
     // Generate a unique write ID for echo prevention (more reliable than timestamps)
@@ -147,6 +130,12 @@ export function saveStateToFirebase(appState) {
     return update(ref(database), updates).then(() => {
         // Keep writeId in pending set for echo prevention
         window._firebasePendingWriteIds = _pendingWriteIds;
+        // Remember what we successfully wrote
+        window._lastWrittenSettings = {
+            houses: housesObj ? JSON.parse(JSON.stringify(housesObj)) : {},
+            categories: appState.categories ? JSON.parse(JSON.stringify(appState.categories)) : {},
+            budgets: appState.budgets ? JSON.parse(JSON.stringify(appState.budgets)) : {}
+        };
     }).catch((error) => {
         _pendingWriteIds.delete(writeId);
         window._firebasePendingWriteIds = _pendingWriteIds;

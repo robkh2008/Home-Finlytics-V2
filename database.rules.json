@@ -26,10 +26,16 @@
     },
 
     "appState": {
+      // USER-CENTRIC MODEL (May 2026):
+      // - transactions_public: shared data (groceries, lent, returned, settlement) — all users read/write
+      // - transactions_private: per-user expenses & rent — all users read/write (client filters by userId)
+      // - budgets, payers: all users read/write
+      // - houses, categories, currency, electricRate: admin-only write (structural data)
+
       "transactions_public": {
         ".read": "auth != null",
         ".write": "auth != null",
-        ".indexOn": ["type", "category", "date", "createdAt"],
+        ".indexOn": ["type", "category", "date", "createdAt", "userId"],
         "$txId": {
           ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])",
           "amount": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 99999999" },
@@ -39,9 +45,9 @@
       },
 
       "transactions_private": {
-        ".read": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
-        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)",
-        ".indexOn": ["type", "category", "date", "createdAt"],
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": ["type", "category", "date", "createdAt", "userId"],
         "$txId": {
           ".validate": "newData.hasChildren(['id','type','category','amount','date','createdAt'])",
           "amount": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 99999999" },
@@ -60,7 +66,8 @@
       },
       "budgets": {
         ".read": "auth != null",
-        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+        ".write": "auth != null",
+        ".indexOn": [".value"]
       },
       "recurringTemplates": {
         ".read": "auth != null",
@@ -68,7 +75,8 @@
       },
       "payers": {
         ".read": "auth != null",
-        ".write": "auth != null && (root.child('admins/uids').child(auth.uid).val() === true || root.child('admins/emails').child(auth.token.email.replace('.',',')).val() === true)"
+        ".write": "auth != null",
+        ".indexOn": [".value"]
       },
       "currency": {
         ".read": "auth != null",

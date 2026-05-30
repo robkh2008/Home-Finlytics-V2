@@ -59,3 +59,94 @@ body {
     border-right: 1px solid var(--divider);
    }
 }
+
+/* ===== Watermarks ===== */
+.watermark {
+    position: relative;
+    overflow: hidden;
+}
+.watermark::before {
+    content: attr(data-watermark);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-15deg);
+    font-size: clamp(4rem, 20vw, 10rem);
+    font-weight: 900;
+    color: var(--text-tertiary);
+    opacity: 0.035;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 0;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    line-height: 1;
+    user-select: none;
+}
+.watermark > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Card-specific watermarks */
+.card-watermark {
+    position: relative;
+    overflow: hidden;
+}
+.card-watermark::after {
+    content: attr(data-card-mark);
+    position: absolute;
+    bottom: -8px;
+    right: -8px;
+    font-size: clamp(3rem, 12vw, 6rem);
+    font-weight: 900;
+    color: var(--text-tertiary);
+    opacity: 0.04;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 0;
+    line-height: 1;
+    user-select: none;
+}
+.card-watermark > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Screen-level watermarks */
+.screen-scroll {
+    position: relative;
+}
+.screen-watermark {
+    position: absolute;
+    top: 60px;
+    right: -20px;
+    font-size: clamp(5rem, 25vw, 12rem);
+    font-weight: 900;
+    color: var(--text-tertiary);
+    opacity: 0.025;
+    pointer-events: none;
+    z-index: 0;
+    line-height: 1;
+    user-select: none;
+    text-transform: uppercase;
+    letter-spacing: 8px;
+    transform: rotate(8deg);
+}
+.screen-watermark + *,
+.screen-watermark ~ * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Dark mode specific adjustments */
+[data-theme="dark"] .watermark::before,
+[data-theme="dark"] .card-watermark::after,
+[data-theme="dark"] .screen-watermark {
+    opacity: 0.04;
+}
+[data-theme="light"] .watermark::before,
+[data-theme="light"] .card-watermark::after,
+[data-theme="light"] .screen-watermark {
+    opacity: 0.025;
+}

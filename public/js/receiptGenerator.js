@@ -1,42 +1,212 @@
 // ==================== js/receiptGenerator.js ====================
 
+// Toggle live receipt preview visibility
+function toggleReceiptPreview() {
+    const preview = document.getElementById('receiptLivePreview');
+    if (preview) {
+        preview.classList.toggle('collapsed');
+    }
+}
+
+// Toggle adjustment +/- button
+function toggleAdj(btn, hiddenId) {
+    const toggle = btn.closest('.adj-toggle');
+    if (!toggle) return;
+    toggle.querySelectorAll('.adj-toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const hidden = document.getElementById(hiddenId);
+    if (hidden) hidden.value = btn.dataset.val;
+    if (typeof updateLiveReceiptPreview === 'function') updateLiveReceiptPreview();
+}
+
+// Auto-fetch previous electric reading when house is selected
+function autoFetchPreviousElectricUnits(houseId) {
+    if (!houseId) return;
+    // Search through all transactions for the most recent electric reading for this house
+    const allTxs = state.transactions || [];
+    let lastReading = null;
+    let lastDate = '';
+    
+    allTxs.forEach(tx => {
+        if (tx.houseId !== houseId) return;
+        if (!tx.notes) return;
+        // Look for electric unit info in notes: "Current: X, Previous: Y" or "X units"
+        const match = tx.notes.match(/Current[:\s]*(\d+)/i) || tx.notes.match(/Electric[:\s\d\w]*?(\d+)\s*units/i);
+        if (match && tx.date > lastDate) {
+            lastReading = parseInt(match[1]);
+            lastDate = tx.date;
+        }
+    });
+    
+    // Also check house's stored lastElectricReading
+    const house = (state.houses || []).find(h => h.id === houseId);
+    if (house && house.lastElectricReading && (!lastDate || house.lastElectricDate > lastDate)) {
+        lastReading = house.lastElectricReading;
+    }
+    
+    if (lastReading) {
+        const prevUnitEl = document.getElementById('previousUnit');
+        if (prevUnitEl) prevUnitEl.value = lastReading;
+        updateLiveReceiptPreview();
+    }
+}
+
+// Get electric rate for the currently selected house (fallback to global)
+function getCurrentHouseElectricRate() {
+    const houseId = document.getElementById('receiptHouse')?.value;
+    if (houseId) {
+        const house = (state.houses || []).find(h => h.id === houseId);
+        if (house && house.electricRate) return house.electricRate;
+    }
+    return 8; // default fallback
+}
+
+// Toggle a bill card open/closed
+function toggleBillCard(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.classList.toggle('active');
+    updateLiveReceiptPreview();
+}
+
+// Live preview: updates the receipt preview panel in real-time as fields change
+function updateLiveReceiptPreview() {
+    const previewBody = document.getElementById('receiptLivePreviewBody');
+    const liveTotal = document.getElementById('receiptLiveTotal');
+    if (!previewBody) return;
+    
+    const houseId = document.getElementById('receiptHouse')?.value;
+    const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
+    const house = houses.find(h => h.id === houseId);
+    const periodMonth = document.getElementById('receiptMonth')?.value;
+    const issueDate = document.getElementById('receiptIssueDate')?.value;
+    
+    if (!house || !periodMonth) {
+        previewBody.innerHTML = '<div class="rp-empty">🏠 Select a house and period to see preview</div>';
+        if (liveTotal) liveTotal.innerHTML = 'Total: ₹0.00';
+        return;
+    }
+    
+    const rent = parseFloat(document.getElementById('receiptRent')?.value) || 0;
+    let total = rent;
+    let lines = [];
+    
+    if (rent > 0) lines.push({ label: '🏠 Rent', amount: rent });
+    
+    // Water bill
+    if (document.getElementById('billCardWater')?.classList.contains('active')) {
+        const w = parseFloat(document.getElementById('waterBillAmount')?.value) || 0;
+        if (w > 0) { total += w; lines.push({ label: '💧 Water Bill', amount: w, badge: 'water' }); }
+    }
+    // Motor bill
+    if (document.getElementById('billCardMotor')?.classList.contains('active')) {
+        const m = parseFloat(document.getElementById('motorBillAmount')?.value) || 0;
+        if (m > 0) { total += m; lines.push({ label: '🪣 Motor Bill', amount: m, badge: 'motor' }); }
+    }
+    // Electric bill
+    if (document.getElementById('billCardElectric')?.classList.contains('active')) {
+        const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
+        const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
+        const units = Math.max(0, curr - prev);
+        const rate = getCurrentHouseElectricRate();
+        const elec = units * rate;
+        if (elec > 0) { total += elec; lines.push({ label: `⚡ Electric (${units} units × ₹${rate})`, amount: elec, badge: 'electric' }); }
+    }
+    // Adjustments
+    const adj1 = parseFloat(document.getElementById('adj1Amount')?.value) || 0;
+    if (adj1 > 0) {
+        const sign = document.getElementById('adj1Type')?.value === 'add' ? 1 : -1;
+        total += adj1 * sign;
+        lines.push({ label: '🔧 Adjustment 1', amount: adj1 * sign, badge: 'adjust' });
+    }
+    const adj2 = parseFloat(document.getElementById('adj2Amount')?.value) || 0;
+    if (adj2 > 0) {
+        const sign = document.getElementById('adj2Type')?.value === 'add' ? 1 : -1;
+        total += adj2 * sign;
+        lines.push({ label: '🔧 Adjustment 2', amount: adj2 * sign, badge: 'adjust' });
+    }
+    
+    total = Math.max(0, total);
+    
+    if (lines.length === 0) {
+        previewBody.innerHTML = '<div class="rp-empty">📝 Enter amounts to see the breakdown</div>';
+    } else {
+        const safeIssueDate = issueDate ? (() => { const [y,m,d] = issueDate.split('-'); return new Date(y, m-1, d).toLocaleDateString(); })() : '—';
+        previewBody.innerHTML = `
+            <div style="margin-bottom:12px;font-size:0.75rem;color:#888;">
+                <strong>${escapeHTML(house.houseNo ? 'House ' + house.houseNo : '')}</strong> · ${escapeHTML(house.tenant || '')} · ${escapeHTML(formatPeriodMonth(periodMonth))}
+                ${issueDate ? ' · ' + safeIssueDate : ''}
+            </div>
+            ${lines.map(l => `
+                <div class="rp-row">
+                    <span>${l.label} ${l.badge ? '<span class="rp-badge rp-badge-' + l.badge + '">' + l.badge.toUpperCase() + '</span>' : ''}</span>
+                    <span style="font-weight:600;color:${l.amount < 0 ? 'var(--danger)' : '#333'};">${l.amount < 0 ? '-' : ''}${formatCurrency(Math.abs(l.amount))}</span>
+                </div>
+            `).join('')}
+            <div class="rp-total">
+                <span>Total</span>
+                <span>${formatCurrency(total)}</span>
+            </div>
+        `;
+    }
+    
+    if (liveTotal) liveTotal.innerHTML = `Total: ${formatCurrency(total)}`;
+    
+    // Update electric calculation display
+    const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
+    const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
+    const units = Math.max(0, curr - prev);
+    const rate = getCurrentHouseElectricRate();
+    const elecResult = document.getElementById('electricCalcResult');
+    if (elecResult) elecResult.innerHTML = `Units: ${units} | ${formatCurrency(units * rate)}`;
+}
+
 function refreshReceiptForm() {
     const sel = document.getElementById('receiptHouse');
     if (sel) {
         const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
-        sel.innerHTML = '<option value="">Select</option>' +
+        sel.innerHTML = '<option value="">Select House</option>' +
             houses.map(h => `<option value="${escapeHTML(h.id)}">House ${escapeHTML(h.houseNo)} - ${escapeHTML(h.tenant)} (Owner: ${escapeHTML(h.owner)})</option>`).join('');
-            
     }
     
     const issueDate = document.getElementById('receiptIssueDate');
     if (issueDate) issueDate.value = new Date().toISOString().slice(0, 10);
     
-    // Preload html2canvas early so JPG/PDF downloads are instant when clicked
+    // Preload html2canvas
     if (typeof window.html2canvas === 'undefined') {
         loadHtml2Canvas().catch(() => {});
     }
     
-    // FIX: Use CSS class to hide instead of inline style — but only if a receipt isn't currently showing
+    // Hide the generated receipt card
     const previewCard = document.getElementById('receiptPreviewCard');
     if (previewCard) {
-        // Don't hide the preview if a receipt has been generated (user is viewing it)
-        const paper = document.getElementById('receiptPaper');
-        const hasGeneratedReceipt = paper && paper.innerHTML.trim().length > 0 && previewCard.style.display !== 'none';
-        if (!hasGeneratedReceipt) {
-            previewCard.classList.add('hidden');
-            previewCard.style.display = '';
-        }
+        previewCard.classList.add('hidden');
+        previewCard.style.display = '';
     }
     
-    // FIX: Update both total preview elements
-    const inFormTotal = document.getElementById('receiptTotalPreview');
-    if (inFormTotal) inFormTotal.innerHTML = '<strong>Total: ₹0.00</strong>';
-    const standaloneTotal = document.getElementById('receiptTotalPreviewForm');
-    if (standaloneTotal) standaloneTotal.innerHTML = '<strong>Total: ₹0.00</strong>';
-
+    // Reset bill toggle cards to closed
+    ['billCardWater', 'billCardMotor', 'billCardElectric'].forEach(id => {
+        document.getElementById(id)?.classList.remove('active');
+    });
+    // Clear bill inputs
+    ['waterBillAmount', 'motorBillAmount', 'currentUnit', 'previousUnit', 'adj1Amount', 'adj2Amount'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    
     const rateLabel = document.getElementById('electricRateLabel');
-    if (rateLabel) rateLabel.textContent = (state.currency || '₹') + (state.electricRate || 8);
+    if (rateLabel) rateLabel.textContent = (state.currency || '₹') + getCurrentHouseElectricRate();
+    
+    // Reset adj toggles to +
+    document.querySelectorAll('.adj-toggle-btn[data-val="add"]').forEach(b => b.classList.add('active'));
+    document.querySelectorAll('.adj-toggle-btn[data-val="deduct"]').forEach(b => b.classList.remove('active'));
+    const adj1Type = document.getElementById('adj1Type');
+    const adj2Type = document.getElementById('adj2Type');
+    if (adj1Type) adj1Type.value = 'add';
+    if (adj2Type) adj2Type.value = 'add';
+    
+    // Update live preview
+    updateLiveReceiptPreview();
 }
 
 function generateReceipt() {
@@ -65,29 +235,29 @@ function generateReceipt() {
         const receiptNo = generateReceiptNumber(issueDate);
         const payerName = house.tenant;
 
-        // --- Calculations ---
+        // --- Calculations using bill toggle cards ---
         const rent = parseFloat(document.getElementById('receiptRent').value) || 0;
         let total = rent;
         let details = `Rent: ${formatCurrency(rent)}\n`;
 
-        if (document.getElementById('includeWaterBill')?.checked) {
+        if (document.getElementById('billCardWater')?.classList.contains('active')) {
             const w = parseFloat(document.getElementById('waterBillAmount')?.value) || 0;
             total += w;
             details += `Water Bill: ${formatCurrency(w)}\n`;
         }
-        if (document.getElementById('includeMotorBill')?.checked) {
+        if (document.getElementById('billCardMotor')?.classList.contains('active')) {
             const m = parseFloat(document.getElementById('motorBillAmount')?.value) || 0;
             total += m;
             details += `Motor Bill: ${formatCurrency(m)}\n`;
         }
-        if (document.getElementById('includeElectricBill')?.checked) {
+        if (document.getElementById('billCardElectric')?.classList.contains('active')) {
             const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
             const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
             const units = Math.max(0, curr - prev);
-        const rate = state.electricRate || 8;
-        const elec = units * rate;
+            const rate = getCurrentHouseElectricRate();
+            const elec = units * rate;
             total += elec;
-        details += `Electric Bill: ${units} units × ${state.currency || '₹'}${rate} = ${formatCurrency(elec)}\n`;
+            details += `Electric Bill: ${units} units × ${state.currency || '₹'}${rate} = ${formatCurrency(elec)}\n`;
         }
         
         const adj1 = parseFloat(document.getElementById('adj1Amount')?.value) || 0;
@@ -113,7 +283,7 @@ function generateReceipt() {
         paper.innerHTML = `
             <div class="receipt-header" style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #ccc; padding-bottom: 12px; margin-bottom: 16px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23007aff'/%3E%3Ctext x='50' y='65' font-size='40' text-anchor='middle' fill='white'%3E💰%3C/text%3E%3C/svg%3E" alt="Home Finlytics Logo" width="55" height="55">
+                    <img src="/images/logo.svg" alt="Home Finlytics Logo" width="55" height="55" style="border-radius:12px;">
                     <div>
                         <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Home Finlytics</h2>
                         <small style="color: #666; font-size: 0.85rem;">Property Management</small>
@@ -181,6 +351,18 @@ function generateReceipt() {
         };
         const savedTx = addTransaction(rentTransaction, true);
         if (!savedTx) return; // Abort if transaction failed validation (e.g., amount <= 0)
+
+        // Store electric reading for next month's auto-fetch
+        if (document.getElementById('billCardElectric')?.classList.contains('active')) {
+            const currUnit = parseFloat(document.getElementById('currentUnit')?.value) || 0;
+            if (currUnit > 0 && house) {
+                const houseIdx = (state.houses || []).findIndex(h => h.id === house.id);
+                if (houseIdx >= 0) {
+                    state.houses[houseIdx].lastElectricReading = currUnit;
+                    state.houses[houseIdx].lastElectricDate = issueDate;
+                }
+            }
+        }
 
         // Add payer to list if new
         const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];

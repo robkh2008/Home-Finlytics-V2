@@ -5,8 +5,9 @@ let state = {
     houses: [...DEFAULT_HOUSES],
     categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
     payers: [...DEFAULT_PAYERS],
-    budgets: {},
+    budgets: {},           // NEW: { [userId]: { [category]: limit } } — per-user budgets
     currency: '₹',
+    paymentModes: ['CASH', 'UPI', 'BANK', 'ICICI CARD', 'SCB CARD'],
     electricRate: 8,
     theme: window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
     fontSize: '15',
@@ -20,7 +21,12 @@ let state = {
     appLock: { enabled: false, credentialId: null },
     currentUser: null,
     userRole: 'user', // 'admin' or 'user'
-    userProfile: null  // { displayName, email } from Firebase profiles/{uid}
+    userProfile: null,  // { displayName, email } from Firebase profiles/{uid}
+    userGroup: {        // NEW: household/family group concept
+        id: 'default',
+        name: 'My Household',
+        members: []     // { uid, displayName, email }
+    }
 };
 let deferredPrompt;
 
@@ -40,6 +46,7 @@ function resetState() {
     state.houses = [];
     state.categories = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : { expense: [], groceries: [] };
     state.payers = [];
+    state.paymentModes = ['CASH', 'UPI', 'BANK', 'ICICI CARD', 'SCB CARD'];
     state.budgets = {};
     state.electricRate = 8;
     state.recurringTemplates = [];
@@ -123,6 +130,20 @@ function loadState() {
         
         if (!state.categories.expense || state.categories.expense.length === 0) state.categories.expense = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.expense)) : [];
         if (!state.categories.groceries || state.categories.groceries.length === 0) state.categories.groceries = typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES.groceries)) : [];
+        
+        // MIGRATION: Ensure Landing category exists for existing users
+        if (state.categories.expense && state.categories.expense.length > 0 && typeof DEFAULT_CATEGORIES !== 'undefined') {
+            if (!state.categories.expense.some(c => c.name === 'Landing')) {
+                const defLanding = DEFAULT_CATEGORIES.expense.find(c => c.name === 'Landing');
+                if (defLanding) state.categories.expense.push(defLanding);
+            }
+            // Remove 'Landing' from Miscellaneous Expenses subcategories
+            const miscCat = state.categories.expense.find(c => c.name === 'Miscellaneous Expenses');
+            if (miscCat && miscCat.subcategories) {
+                miscCat.subcategories = miscCat.subcategories.filter(s => s !== 'Landing');
+            }
+        }
+        
         if (!state.houses) state.houses = [];
         if (!state.payers) state.payers = [];
         
@@ -204,11 +225,46 @@ function onFirebaseDataReceived(firebaseData) {
         sortAscending: state.sortAscending
     };
 
+    // Preserve locally-modified budgets and payers before cloud overwrite
+    // Always keep local data that doesn't exist in cloud
+    const localBudgets = state.budgets ? JSON.parse(JSON.stringify(state.budgets)) : {};
+    const localPayers = [...(state.payers || [])];
+    const hadUnsynced = state.hasUnsyncedChanges;
+
     Object.assign(state, firebaseData);
     Object.assign(state, uiOnly);
     
+    // Merge back local budgets that don't exist in cloud
+    if (!state.budgets) state.budgets = {};
+    let mergedBudgets = false;
+    Object.keys(localBudgets).forEach(scope => {
+        if (!state.budgets[scope]) {
+            state.budgets[scope] = localBudgets[scope];
+            mergedBudgets = true;
+        } else {
+            Object.keys(localBudgets[scope]).forEach(cat => {
+                if (!(cat in state.budgets[scope])) {
+                    state.budgets[scope][cat] = localBudgets[scope][cat];
+                    mergedBudgets = true;
+                }
+            });
+        }
+    });
+    
+    // Merge back local payers
+    const existingPayers = new Set((state.payers || []).map(p => p.toLowerCase()));
+    let mergedPayers = false;
+    localPayers.forEach(p => {
+        if (!existingPayers.has(p.toLowerCase())) {
+            if (!state.payers) state.payers = [];
+            state.payers.push(p);
+            mergedPayers = true;
+        }
+    });
+    
     state.lastUpdated = cloudLastUpdated || Date.now();
-    state.hasUnsyncedChanges = false;
+    // Keep unsynced if we preserved local changes
+    state.hasUnsyncedChanges = hadUnsynced || mergedBudgets || mergedPayers;
 
     // Ensure core structures exist if Firebase returned null (Firebase removes empty arrays/objects)
     if (!state.transactions) state.transactions = [];
@@ -245,6 +301,59 @@ function onFirebaseDataReceived(firebaseData) {
     
     if (!state.budgets) state.budgets = {};
 
+    // MIGRATION: Convert old flat budgets {cat: limit} to new per-user format {uid: {cat: limit}}
+    if (state.budgets && typeof state.budgets === 'object') {
+        const firstKey = Object.keys(state.budgets)[0];
+        if (firstKey && typeof state.budgets[firstKey] === 'number') {
+            // Old format detected — migrate to current user's budget
+            const oldBudgets = state.budgets;
+            const currentUserId = getCurrentUserId();
+            state.budgets = {};
+            state.budgets[currentUserId] = oldBudgets;
+        }
+        
+        // MIGRATION: Move Groceries and House Rent budgets from per-user to shared/house scopes
+        let needsBudgetMigration = false;
+        Object.keys(state.budgets).forEach(scope => {
+            if (scope.startsWith('__')) return; // Already shared/house scope
+            const scopeBudgets = state.budgets[scope];
+            if (!scopeBudgets || typeof scopeBudgets !== 'object') return;
+            
+            // Move Groceries to shared
+            if (scopeBudgets['Groceries'] !== undefined) {
+                if (!state.budgets['__shared__']) state.budgets['__shared__'] = {};
+                if (!state.budgets['__shared__']['Groceries']) {
+                    state.budgets['__shared__']['Groceries'] = scopeBudgets['Groceries'];
+                }
+                delete scopeBudgets['Groceries'];
+                needsBudgetMigration = true;
+            }
+            
+            // Move House Rent to per-house scope if a house exists
+            if (scopeBudgets['House Rent'] !== undefined) {
+                const houses = state.houses || [];
+                const userHouse = houses.find(h => 
+                    h.linkedUsers && h.linkedUsers.some(lu => lu.toLowerCase() === scope.toLowerCase())
+                ) || houses[0]; // Fallback to first house
+                if (userHouse) {
+                    const houseKey = '__house_' + userHouse.id;
+                    if (!state.budgets[houseKey]) state.budgets[houseKey] = {};
+                    if (!state.budgets[houseKey]['House Rent']) {
+                        state.budgets[houseKey]['House Rent'] = scopeBudgets['House Rent'];
+                    }
+                }
+                delete scopeBudgets['House Rent'];
+                needsBudgetMigration = true;
+            }
+            
+            // Clean up empty scope
+            if (Object.keys(scopeBudgets).length === 0) {
+                delete state.budgets[scope];
+            }
+        });
+        if (needsBudgetMigration) saveState();
+    }
+
     if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
 
     // Apply structural migrations for Groceries and House Rent
@@ -261,6 +370,21 @@ function onFirebaseDataReceived(firebaseData) {
             if (defRent) { state.categories.expense.push(defRent); needsSave = true; }
             const utilCat = state.categories.expense.find(c => c.name === 'Utilities');
             if (utilCat && utilCat.subcategories) utilCat.subcategories = utilCat.subcategories.filter(s => s !== 'House Rent');
+        }
+        
+        // MIGRATION: Add Landing as a standalone category (moved from Miscellaneous subcategory)
+        if (!state.categories.expense.some(c => c.name === 'Landing')) {
+            const defLanding = DEFAULT_CATEGORIES.expense.find(c => c.name === 'Landing');
+            if (defLanding) { state.categories.expense.push(defLanding); needsSave = true; }
+        }
+        // Remove 'Landing' subcategory from Miscellaneous Expenses if it exists
+        const miscCat = state.categories.expense.find(c => c.name === 'Miscellaneous Expenses');
+        if (miscCat && miscCat.subcategories) {
+            const hadLanding = miscCat.subcategories.includes('Landing');
+            if (hadLanding) {
+                miscCat.subcategories = miscCat.subcategories.filter(s => s !== 'Landing');
+                needsSave = true;
+            }
         }
         
         if (state.categories.groceries && state.categories.groceries.some(c => c.name === 'Vegetables')) {
@@ -445,11 +569,39 @@ function navigateTo(screenId) {
     const tabBtn = document.querySelector(`.tab-btn[data-screen="${screenId}"]`);
     if(tabBtn) tabBtn.classList.add('active');
     state.activeScreen = screenId;
-    if(screenId==='screenDashboard') refreshDashboard();
-    if(screenId==='screenTransactions') refreshTransactionList();
+    if(screenId==='screenDashboard') { refreshDashboard(); if (typeof bindDashboardChipEvents === 'function') bindDashboardChipEvents(); }
+    if(screenId==='screenTransactions' && typeof refreshTransactionList === 'function') {
+        // Force invalidate cache and refresh immediately when navigating to transactions
+        if (typeof invalidateTxCache === 'function') invalidateTxCache();
+        // Bypass throttle for navigation-triggered refresh
+        if (refreshTransactionList._throttle) clearTimeout(refreshTransactionList._throttle);
+        refreshTransactionList._throttle = null;
+        refreshTransactionList();
+    }
     if(screenId==='screenAnalytics') refreshAnalytics();
     if(screenId==='screenSettings') refreshSettings();
-    if(screenId==='screenAdd') refreshAddForm();
+    if(screenId==='screenAdd') {
+        refreshAddForm();
+        // Reset scroll to top
+        const scrollEl = document.querySelector('#screenAdd .screen-scroll');
+        if (scrollEl) scrollEl.scrollTop = 0;
+        // Reset form
+        const form = document.getElementById('addTransactionForm');
+        if (form) {
+            form.reset();
+            form.dataset.editId = '';
+            form.dataset.editTemplateIndex = '';
+        }
+        // Auto-focus amount field on mobile for quick entry
+        setTimeout(() => {
+            const amtInput = document.getElementById('addAmount');
+            if (amtInput && window.innerWidth <= 768) {
+                amtInput.focus();
+            }
+            // Reset sticky total
+            updateStickyAddTotal();
+        }, 300);
+    }
     if(screenId==='screenReceipt') {
         refreshReceiptForm();
         const previewCard = document.getElementById('receiptPreviewCard');
@@ -466,7 +618,7 @@ function refreshAll() {
         _refreshAllPending = false;
         const scr = state.activeScreen;
         if(scr==='screenDashboard') refreshDashboard();
-        else if(scr==='screenTransactions') refreshTransactionList();
+        else if(scr==='screenTransactions' && typeof refreshTransactionList === 'function') refreshTransactionList();
         else if(scr==='screenAnalytics') refreshAnalytics();
         else if(scr==='screenSettings') refreshSettings();
         else if(scr==='screenAdd') refreshAddForm();
@@ -494,9 +646,13 @@ function bindNavigationEvents() {
         });
     });
     document.getElementById('settingsFloatingBtn')?.addEventListener('click', () => navigateTo('screenSettings'));
+    document.getElementById('headerLogoLink')?.addEventListener('click', () => navigateTo('screenDashboard'));
 }
 
 function bindDashboardEvents() {
+    // Bind filter chip events
+    if (typeof bindDashboardChipEvents === 'function') bindDashboardChipEvents();
+    
     document.getElementById('budgetOverviewList')?.addEventListener('click', async (e) => {
         const btn = e.target.closest('.share-budget-btn');
         if (btn) {
@@ -531,13 +687,22 @@ function bindTransactionEvents() {
         refreshAddForm();
         updateSubcategoryDropdown();
     });
-    // Show hint when admin residence house is selected in rent form
+    // Show hint about linked users for rent form
     document.getElementById('addHouse')?.addEventListener('change', function() {
         const hint = document.getElementById('addHouseAdminHint');
         if (!hint) return;
         const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
         const selectedHouse = houses.find(h => h.id === this.value);
-        hint.style.display = (selectedHouse && selectedHouse.isAdminHouse) ? 'block' : 'none';
+        if (selectedHouse && selectedHouse.linkedUsers && selectedHouse.linkedUsers.length > 0) {
+            const linkedNames = selectedHouse.linkedUsers.map(lu => getUserDisplayName(lu)).join(', ');
+            hint.innerHTML = `<i class="fas fa-users"></i> Linked to: ${escapeHTML(linkedNames)}`;
+            hint.style.display = 'block';
+        } else if (selectedHouse) {
+            hint.innerHTML = `<i class="fas fa-info-circle"></i> This house has no linked users. Rent will only be visible to you.`;
+            hint.style.display = 'block';
+        } else {
+            hint.style.display = 'none';
+        }
     });
     document.getElementById('addTransactionForm')?.addEventListener('submit', function(e) {
         e.preventDefault();
@@ -552,6 +717,7 @@ function bindTransactionEvents() {
             amount: parseFloat(document.getElementById('addAmount').value),
             date: document.getElementById('addDate').value,
             notes: document.getElementById('addNotes').value || '',
+            userId: getCurrentUserId(),  // Auto-set from current user
             payer: document.getElementById('addPayerOverride')?.value || (state.currentUser ? state.currentUser.name : 'Unknown'),
             paymentMethod: document.getElementById('addPaymentMethod')?.value || 'cash',
             splitWith: splitWith.length > 0 ? splitWith : null,
@@ -658,9 +824,21 @@ function bindTransactionEvents() {
     ['filterSearch', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', refreshTransactionList);
     });
-    ['filterCategory', 'filterSubcategory', 'filterPayer', 'filterDateFrom', 'filterDateTo', 'sortBy'].forEach(id => {
+    ['filterCategory', 'filterSubcategory', 'filterPayer', 'filterLandingStatus', 'filterDateFrom', 'filterDateTo', 'sortBy'].forEach(id => {
         document.getElementById(id)?.addEventListener('change', refreshTransactionList);
     });
+    
+    // Toggle advanced filters on mobile
+    document.getElementById('toggleFilterBtn')?.addEventListener('click', function() {
+        const advanced = document.getElementById('filterAdvanced');
+        if (advanced) {
+            const isVisible = advanced.style.display !== 'none';
+            advanced.style.display = isVisible ? 'none' : 'block';
+            this.querySelector('i').className = isVisible ? 'fas fa-sliders-h' : 'fas fa-times';
+            this.style.color = isVisible ? '' : 'var(--accent)';
+        }
+    });
+    
     // filterType needs populateFilterCategories before refreshTransactionList
     document.getElementById('filterType')?.addEventListener('change', () => {
         populateFilterCategories();
@@ -673,10 +851,13 @@ function bindTransactionEvents() {
     });
     
     const clearAllFilters = function() {
-        ['filterType', 'filterCategory', 'filterSubcategory', 'filterPayer', 'filterSearch', 'filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
+        ['filterType', 'filterCategory', 'filterSubcategory', 'filterPayer', 'filterLandingStatus', 'filterSearch', 'filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = el.tagName === 'SELECT' ? 'all' : '';
         });
+        // Hide landing status filter when clearing
+        const landingFilter = document.getElementById('filterLandingStatus');
+        if (landingFilter) landingFilter.style.display = 'none';
         refreshTransactionList();
     };
     document.getElementById('clearFiltersBtn')?.addEventListener('click', clearAllFilters);
@@ -718,9 +899,6 @@ function bindSettingsEvents() {
     // Currency & Rates
     document.getElementById('currencySelect')?.addEventListener('change', function() {
         state.currency = this.value; saveState(); refreshAll(); showToast('Currency updated to ' + this.value, 'coins');
-    });
-    document.getElementById('settingsElectricRate')?.addEventListener('change', function() {
-        state.electricRate = parseFloat(this.value) || 8; saveState(); refreshReceiptForm(); showToast('Electric rate updated', 'bolt');
     });
 
     // Categories & Subcategories
@@ -820,16 +998,17 @@ function bindSettingsEvents() {
         iconInput.id = 'newCatIcon';
         iconInput.placeholder = '😀';
         iconInput.className = 'form-input';
-        iconInput.style.width = '45px';
+        iconInput.style.width = '60px';
         iconInput.style.textAlign = 'center';
         iconInput.style.cursor = 'pointer';
+        iconInput.style.fontSize = '1.2rem';
         iconInput.readOnly = true;
 
         const picker = document.createElement('div');
         picker.id = 'emojiPickerModal';
         picker.style.cssText = 'display:none; position:absolute; top:120%; left:0; width:260px; background:var(--bg-glass); backdrop-filter:blur(10px); border:1px solid var(--divider); border-radius:8px; padding:8px; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.2); flex-wrap:wrap; gap:4px; max-height:160px; overflow-y:auto;';
         
-        const commonEmojis = ["💰","💸","🍔","🍜","🚌","🚗","🎬","🎮","💡","🏠","🛍️","🏥","💊","📚","💆","💳","📦","🥬","🍎","🐟","💧","🥩","🥛","🍚","🍪","☕","🧂","🧼","🐶","🐱","✈️","📱","💻","🎉","⚽","🎵","👔","🔧","🛠️","🪴"];
+        const commonEmojis = ["💰","💸","🍔","🍜","🚌","🚗","🎬","🎮","💡","🏠","🛍️","🏥","💊","📚","💆","💳","📦","🥬","🍎","🐟","💧","🥩","🥛","🍚","🍪","☕","🧂","🧼","🐶","🐱","✈️","📱","💻","🎉","⚽","🎵","👔","🔧","🛠️","🪴","🍕","🌮","🍣","🧁","🛵","🚲","🎸","🎯","💅","🧘","📝","🏦","🪙","🌈","⭐"];
         commonEmojis.forEach(em => {
             const span = document.createElement('span');
             span.textContent = em;
@@ -843,13 +1022,27 @@ function bindSettingsEvents() {
             picker.appendChild(span);
         });
 
-        iconInput.onclick = () => {
-            picker.style.display = picker.style.display === 'none' ? 'flex' : 'none';
+        iconInput.onclick = (e) => {
+            e.stopPropagation();
+            if (picker.style.display === 'flex') {
+                picker.style.display = 'none';
+                return;
+            }
+            // Move to body to escape stacking context
+            if (picker.parentNode !== document.body) document.body.appendChild(picker);
+            const rect = iconInput.getBoundingClientRect();
+            picker.style.position = 'fixed';
+            picker.style.top = (rect.bottom + 4) + 'px';
+            picker.style.left = rect.left + 'px';
+            picker.style.display = 'flex';
         };
 
         document.addEventListener('click', (e) => {
             if (e.target !== iconInput && !picker.contains(e.target)) {
                 picker.style.display = 'none';
+            }
+            if (e.target !== subcatIconInput && !subcatPicker.contains(e.target)) {
+                subcatPicker.style.display = 'none';
             }
         });
 
@@ -862,7 +1055,34 @@ function bindSettingsEvents() {
     const subcatIconInput = document.getElementById('newSubcatIcon');
     const subcatPicker = document.getElementById('subcatEmojiPicker');
     if (subcatIconInput && subcatPicker) {
-        const subcatEmojis = ["🥦","🍎","🐟","🥩","🥛","🌾","🍿","🥤","🧂","🧹","🍽️","🍔","🥪","☕","🚌","🚗","⛽","✈️","🅿️","🔧","🧽","🛡️","🎬","🎮","🎪","📺","🎨","💡","💧","🌐","🔥","📱","🗑️","👕","💻","🛋️","🍳","🎁","⌚","🩺","💊","🏋️","🦷","👓","📖","📚","🎓","✏️","💇","💄","🧴","🧼","✨","🧖","💳","💰","🔑","🚙","💼","👥","🤝","🗣️","📄","🏛️","🚚","❤️","⚠️","📤","🏠","🚿","⚡","🏍️"];
+        const subcatEmojis = [
+            // Food & Dining
+            "🥦","🍎","🐟","🥩","🥛","🌾","🍿","🥤","🧂","🧹","🍽️","🍔","🥪","☕","🍕","🌮","🍣","🥗","🧁","🍩","🥐","🍜","🍝","🧀","🥚","🍚","🥜","🍯","🧃","🍺","🍷","🥂","🐔","🍗",
+            // Transport
+            "🚌","🚗","⛽","✈️","🅿️","🚲","🛵","🚂","🚢","🚁","🛴","🏍️","🚖","🚊","🛞",
+            // Shopping & Retail
+            "🛍️","👕","💻","🛋️","🍳","🎁","⌚","👟","👜","👗","🧥","📱","💡","🪑","🖼️","🧸","📦",
+            // Healthcare & Wellness
+            "🩺","💊","🏋️","🦷","👓","🧘","🏥","🩹","💉","🧬","🫁","🩻",
+            // Entertainment & Hobbies
+            "🎬","🎮","🎪","📺","🎨","🎵","🎤","🎸","🎯","🎲","♟️","📷","🎭","🕹️",
+            // Household & Utilities
+            "💧","🌐","🔥","🗑️","⚡","🪣","🧴","🧼","🧻","🪥","🫧",
+            // Personal Care
+            "💇","💄","✨","🧖","💅","🪒","🧬","🫦","👄",
+            // Education & Office
+            "📖","📚","🎓","✏️","📝","🖊️","📐","🔬","🎒","📋","💼",
+            // Finance & Money
+            "💳","💰","🔑","💸","🪙","📊","🏦","🧾","💵",
+            // Travel & Places
+            "🏠","🏛️","🚚","🏨","🏖️","⛺","🗽","🌍","🏔️",
+            // Nature & Weather
+            "🌧️","❄️","🌈","🌙","⭐","🔥","💐","🌻","🍀",
+            // People & Social
+            "👥","🤝","🗣️","❤️","👨‍👩‍👧‍👦","💬","📞","📧",
+            // Symbols
+            "⚠️","✅","❌","⭐","🔴","🟢","🔵","📌","📍","🏷️","📤","🔄","➕","➖"
+        ];
         subcatEmojis.forEach(em => {
             const span = document.createElement('span');
             span.textContent = em;
@@ -872,14 +1092,20 @@ function bindSettingsEvents() {
             span.onclick = () => { subcatIconInput.value = em; subcatPicker.style.display = 'none'; };
             subcatPicker.appendChild(span);
         });
-        subcatIconInput.onclick = () => {
-            subcatPicker.style.display = subcatPicker.style.display === 'none' ? 'flex' : 'none';
-        };
-        document.addEventListener('click', (e) => {
-            if (e.target !== subcatIconInput && !subcatPicker.contains(e.target)) {
+        subcatIconInput.onclick = (e) => {
+            e.stopPropagation();
+            if (subcatPicker.style.display === 'flex') {
                 subcatPicker.style.display = 'none';
+                return;
             }
-        });
+            // Move to body to escape stacking context
+            if (subcatPicker.parentNode !== document.body) document.body.appendChild(subcatPicker);
+            const rect = subcatIconInput.getBoundingClientRect();
+            subcatPicker.style.position = 'fixed';
+            subcatPicker.style.top = (rect.bottom + 4) + 'px';
+            subcatPicker.style.left = rect.left + 'px';
+            subcatPicker.style.display = 'flex';
+        };
     }
 
     document.getElementById('addCatBtn')?.addEventListener('click', function() {
@@ -936,9 +1162,8 @@ function bindSettingsEvents() {
         });
     });
 
-    // Payers
+    // Payers - all users can manage household members
     document.getElementById('addPayerBtn')?.addEventListener('click', () => {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
         const name = document.getElementById('newPayerName').value.trim();
         if (!name) return showToast('Enter a name', 'exclamation-triangle');
         if (state.payers.some(p => p.toLowerCase() === name.toLowerCase())) return showToast('Name already exists', 'exclamation-triangle');
@@ -946,42 +1171,83 @@ function bindSettingsEvents() {
         saveState();
         renderPayerList();
         document.getElementById('newPayerName').value = '';
-        showToast('Payer added!', 'check-circle');
+        showToast('Member added!', 'check-circle');
     });
     document.getElementById('payerList')?.addEventListener('click', (e) => {
-        if (state.userRole !== 'admin') return;
         const btn = e.target.closest('.remove-payer-btn');
         if (!btn) return;
         const index = parseInt(btn.dataset.index);
         state.payers.splice(index, 1);
         saveState();
         renderPayerList();
-        showToast('Payer removed.', 'trash-alt');
+        showToast('Member removed.', 'trash-alt');
     });
 
-    // Budgets
+    // Payment Modes
+    document.getElementById('addPaymentModeBtn')?.addEventListener('click', () => {
+        const name = document.getElementById('newPaymentMode').value.trim().toUpperCase();
+        if (!name) return showToast('Enter a payment mode', 'exclamation-triangle');
+        if (!state.paymentModes) state.paymentModes = ['CASH', 'UPI', 'BANK', 'ICICI CARD', 'SCB CARD'];
+        if (state.paymentModes.includes(name)) return showToast('Payment mode already exists', 'exclamation-triangle');
+        state.paymentModes.push(name);
+        saveState();
+        if (typeof renderPaymentModeList === 'function') renderPaymentModeList();
+        if (typeof refreshPaymentModeSelects === 'function') refreshPaymentModeSelects();
+        document.getElementById('newPaymentMode').value = '';
+        showToast('Payment mode added!', 'credit-card');
+    });
+    document.getElementById('paymentModeList')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-payment-mode-btn');
+        if (!btn) return;
+        const index = parseInt(btn.dataset.index);
+        if (!state.paymentModes) state.paymentModes = ['CASH', 'UPI', 'BANK', 'ICICI CARD', 'SCB CARD'];
+        state.paymentModes.splice(index, 1);
+        saveState();
+        if (typeof renderPaymentModeList === 'function') renderPaymentModeList();
+        if (typeof refreshPaymentModeSelects === 'function') refreshPaymentModeSelects();
+        showToast('Payment mode removed.', 'trash-alt');
+    });
+
+    // Budgets - three-tier: shared groceries, per-house rent, per-user
     document.getElementById('addBudgetBtn')?.addEventListener('click', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
         const cat = document.getElementById('budgetCatSelect').value;
         const limit = parseFloat(document.getElementById('budgetLimitInput').value);
+        const selectedScope = document.getElementById('budgetForUser')?.value || getCurrentUserId();
         if (!cat || isNaN(limit) || limit <= 0) { showToast('Enter valid limit', 'exclamation-triangle'); return; }
-        state.budgets[cat] = limit;
+        // Initialize budgets structure if needed
+        if (!state.budgets) state.budgets = {};
+        if (!state.budgets[selectedScope]) state.budgets[selectedScope] = {};
+        state.budgets[selectedScope][cat] = limit;
         saveState();
-        // Reset the input field and refresh the category dropdown
         document.getElementById('budgetLimitInput').value = '';
         document.getElementById('budgetCatSelect').value = '';
         refreshSettings();
-        showToast('Budget set for ' + cat, 'bullseye');
+        // Show contextual toast
+        let scopeLabel = 'budget';
+        if (selectedScope === '__shared__') scopeLabel = 'shared groceries budget';
+        else if (selectedScope.startsWith('__house_')) scopeLabel = 'house rent budget';
+        else scopeLabel = 'budget for ' + getUserDisplayName(selectedScope);
+        showToast('Set ' + scopeLabel + ': ' + cat, 'bullseye');
     });
     document.getElementById('budgetSettingsList')?.addEventListener('click', function(e) {
         const btn = e.target.closest('.remove-budget-btn');
-        if (state.userRole !== 'admin') return;
         if (btn) {
-            delete state.budgets[btn.dataset.cat];
+            const scope = btn.dataset.scope || btn.dataset.user || getCurrentUserId();
+            const cat = btn.dataset.cat;
+            if (state.budgets?.[scope]) {
+                delete state.budgets[scope][cat];
+                if (Object.keys(state.budgets[scope]).length === 0) {
+                    delete state.budgets[scope];
+                }
+            }
             saveState();
             refreshSettings();
             showToast('Budget removed.', 'trash-alt');
         }
+    });
+    // Refresh budget list when scope selector changes
+    document.getElementById('budgetForUser')?.addEventListener('change', function() {
+        refreshBudgetSettingsList();
     });
 
     // Houses
@@ -995,6 +1261,12 @@ function bindSettingsEvents() {
             return;
         }
         
+        // Collect linked users from checkboxes
+        const linkedUsers = [];
+        document.querySelectorAll('.house-linked-user-cb:checked').forEach(cb => {
+            linkedUsers.push(cb.value);
+        });
+        
         const h = {
             id: 'h' + Date.now(),
             houseNo: document.getElementById('newHouseNo').value.trim(),
@@ -1002,14 +1274,16 @@ function bindSettingsEvents() {
             tenant: document.getElementById('newHouseTenant').value.trim(),
             owner: document.getElementById('newHouseOwner').value.trim(),
             rent: parseFloat(document.getElementById('newHouseRent').value) || 0,
-            isAdminHouse: !!document.getElementById('newHouseAdminResidence')?.checked,
+            waterBill: parseFloat(document.getElementById('newHouseWater')?.value) || 0,
+            motorBill: parseFloat(document.getElementById('newHouseMotor')?.value) || 0,
+            electricRate: parseFloat(document.getElementById('newHouseElecRate')?.value) || 0,
+            linkedUsers: linkedUsers,
         };
         if (!h.houseNo || !h.tenant) { showToast('Fill House No. and Tenant', 'exclamation-triangle'); return; }
         state.houses.push(h);
         saveState();
-        ['newHouseNo', 'newHouseAddress', 'newHouseTenant', 'newHouseOwner', 'newHouseRent'].forEach(id => document.getElementById(id).value = '');
-        const adminCb = document.getElementById('newHouseAdminResidence');
-        if (adminCb) adminCb.checked = false;
+        ['newHouseNo', 'newHouseAddress', 'newHouseTenant', 'newHouseOwner', 'newHouseRent', 'newHouseWater', 'newHouseMotor', 'newHouseElecRate'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        document.querySelectorAll('.house-linked-user-cb').forEach(cb => cb.checked = false);
         refreshSettings();
         refreshAll();
         showToast('House added!', 'home');
@@ -1035,9 +1309,9 @@ function bindSettingsEvents() {
         }
     });
 
-    // Data Management
+    // Data Management - available to all authenticated users
     document.getElementById('exportDataBtn')?.addEventListener('click', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to export data', 'exclamation-triangle');
         const blob = new Blob([JSON.stringify({
             transactions: getVisibleTransactions(),
             houses: state.houses,
@@ -1055,7 +1329,7 @@ function bindSettingsEvents() {
         showToast('Data exported!', 'download');
     });
     document.getElementById('exportCSVBtn')?.addEventListener('click', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to export data', 'exclamation-triangle');
         const headers = ['Date', 'Type', 'Category', 'Subcategory', 'Amount', 'Currency', 'Payer', 'Payment Method', 'Notes', 'House ID'];
         const rows = getVisibleTransactions().map(t => [t.date, t.type, t.category, t.subcategory, t.amount, state.currency, t.payer || '', t.paymentMethod || '', (t.notes || '').replace(/,/g, ';'), t.houseId || '' ]);
         const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -1069,11 +1343,11 @@ function bindSettingsEvents() {
         showToast('CSV exported!', 'file-csv');
     });
     document.getElementById('importDataBtn')?.addEventListener('click', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to import data', 'exclamation-triangle');
         document.getElementById('importFileInput').click();
     });
     document.getElementById('importFileInput')?.addEventListener('change', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to import data', 'exclamation-triangle');
         const file = this.files[0];
         if (!file) return;
         const reader = new FileReader();
@@ -1096,11 +1370,11 @@ function bindSettingsEvents() {
         reader.readAsText(file);
     });
     document.getElementById('importCSVBtn')?.addEventListener('click', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to import data', 'exclamation-triangle');
         document.getElementById('importCSVInput').click();
     });
     document.getElementById('importCSVInput')?.addEventListener('change', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to import data', 'exclamation-triangle');
         const file = this.files[0];
         if (!file) return;
         const reader = new FileReader();
@@ -1143,7 +1417,7 @@ function bindSettingsEvents() {
         reader.readAsText(file);
     });
     document.getElementById('clearAllDataBtn')?.addEventListener('click', function() {
-        if (state.userRole !== 'admin') return showToast('Unauthorized action', 'exclamation-triangle');
+        if (!state.currentUser) return showToast('Sign in to manage data', 'exclamation-triangle');
         showConfirm('Clear All Data',
             'This will delete ALL transactions and reset settings. This cannot be undone.', 'exclamation-triangle', () => {
                 resetState();
@@ -1211,10 +1485,15 @@ function bindSettingsEvents() {
             const installCard = document.getElementById('installAppCard');
             if (installCard) installCard.style.display = 'none';
         } else {
-            // On iOS, the button is instructional — show a toast reminder
+            // Show instructions based on platform
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isAndroid = /Android/.test(navigator.userAgent);
             if (isIOS) {
                 showToast('Tap Safari Share icon ⎙ → Add to Home Screen', 'share-square');
+            } else if (isAndroid) {
+                showToast('Tap Chrome menu ⋮ → Add to Home Screen', 'mobile-alt');
+            } else {
+                showToast('Use browser menu → Add to Home Screen', 'mobile-alt');
             }
         }
     });
@@ -1340,59 +1619,65 @@ function bindAnalyticsEvents() {
 
 // Extracted global receipt total function
 function updateReceiptTotal() {
-    const rent = parseFloat(document.getElementById('receiptRent')?.value) || 0;
-    let total = rent;
-    if (document.getElementById('includeWaterBill')?.checked) total += parseFloat(document.getElementById('waterBillAmount')?.value) || 0;
-    if (document.getElementById('includeMotorBill')?.checked) total += parseFloat(document.getElementById('motorBillAmount')?.value) || 0;
-    if (document.getElementById('includeElectricBill')?.checked) {
-        const curr = parseFloat(document.getElementById('currentUnit')?.value) || 0;
-        const prev = parseFloat(document.getElementById('previousUnit')?.value) || 0;
-        const units = Math.max(0, curr - prev);
-        const rate = state.electricRate || 8;
-        const elecAmt = units * rate;
-        const elecDisplay = document.getElementById('electricCalcResult');
-        if (elecDisplay) elecDisplay.textContent = `Units: ${units} | ${formatCurrency(elecAmt)}`;
-        total += elecAmt;
-    }
-    const adj1 = parseFloat(document.getElementById('adj1Amount')?.value) || 0;
-    const adj2 = parseFloat(document.getElementById('adj2Amount')?.value) || 0;
-    total += (document.getElementById('adj1Type')?.value === 'add' ? adj1 : -adj1);
-    total += (document.getElementById('adj2Type')?.value === 'add' ? adj2 : -adj2);
-    
-    // FIX: Update both the in-form and the standalone total preview
-    const formattedTotal = formatCurrency(Math.max(0, total));
-    const inFormTotal = document.getElementById('receiptTotalPreview');
-    if (inFormTotal) inFormTotal.innerHTML = `<strong>Total: ${formattedTotal}</strong>`;
-    const standaloneTotal = document.getElementById('receiptTotalPreviewForm');
-    if (standaloneTotal) standaloneTotal.innerHTML = `<strong>Total: ${formattedTotal}</strong>`;
+    // Delegate to new live preview function (bill toggle cards)
+    if (typeof updateLiveReceiptPreview === 'function') updateLiveReceiptPreview();
 }
 window.updateReceiptTotal = updateReceiptTotal;
 
 function bindReceiptEvents() {
+    // House change → auto-fill rent, water, motor, and previous electric units
     document.getElementById('receiptHouse')?.addEventListener('change', function() {
-        const house = state.houses.find(h => h.id === this.value);
+        const house = (state.houses || []).find(h => h.id === this.value);
         if (house) {
-            document.getElementById('receiptRent').value = house.rent;
-            updateReceiptTotal();
+            document.getElementById('receiptRent').value = house.rent || '';
+            // Auto-fill water/motor from house defaults
+            if (house.waterBill) {
+                document.getElementById('billCardWater')?.classList.add('active');
+                document.getElementById('waterBillAmount').value = house.waterBill;
+            }
+            if (house.motorBill) {
+                document.getElementById('billCardMotor')?.classList.add('active');
+                document.getElementById('motorBillAmount').value = house.motorBill;
+            }
+            // Auto-fetch previous electric units
+            if (typeof autoFetchPreviousElectricUnits === 'function') {
+                autoFetchPreviousElectricUnits(house.id);
+            }
+            // Update electric rate label to reflect house-specific rate
+            const rateLabel = document.getElementById('electricRateLabel');
+            if (rateLabel) {
+                const houseRate = house.electricRate || 8;
+                rateLabel.textContent = (state.currency || '₹') + houseRate;
+            }
         }
+        updateLiveReceiptPreview();
+    });
+    
+    // Rent, period, date changes → update live preview
+    ['receiptRent', 'receiptMonth', 'receiptIssueDate'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', updateLiveReceiptPreview);
+        document.getElementById(id)?.addEventListener('change', updateLiveReceiptPreview);
     });
 
-    document.getElementById('includeWaterBill')?.addEventListener('change', function() {
-        document.getElementById('waterBillAmount').style.display = this.checked ? 'block' : 'none';
-        updateReceiptTotal();
+    // Adjustment +/- toggle buttons (event delegation)
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.adj-toggle-btn');
+        if (!btn) return;
+        const toggle = btn.closest('.adj-toggle');
+        if (!toggle) return;
+        const hiddenId = toggle.dataset.hidden;
+        if (!hiddenId) return;
+        e.preventDefault();
+        // Update active state
+        toggle.querySelectorAll('.adj-toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        // Update hidden input
+        const hidden = document.getElementById(hiddenId);
+        if (hidden) hidden.value = btn.dataset.val;
+        // Update live preview
+        if (typeof updateLiveReceiptPreview === 'function') updateLiveReceiptPreview();
     });
-    document.getElementById('includeMotorBill')?.addEventListener('change', function() {
-        document.getElementById('motorBillAmount').style.display = this.checked ? 'block' : 'none';
-        updateReceiptTotal();
-    });
-    document.getElementById('includeElectricBill')?.addEventListener('change', function() {
-        document.getElementById('electricInputs').style.display = this.checked ? 'block' : 'none';
-        updateReceiptTotal();
-    });
-    ['currentUnit', 'previousUnit', 'waterBillAmount', 'motorBillAmount', 'adj1Amount', 'adj2Amount', 'adj1Type', 'adj2Type'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', updateReceiptTotal);
-        document.getElementById(id)?.addEventListener('change', updateReceiptTotal);
-    });
+
     // This is the single receipt form submit – generateReceipt() lives in receiptGenerator.js
     document.getElementById('receiptForm')?.addEventListener('submit', function(e) {
         e.preventDefault();
@@ -1764,7 +2049,7 @@ function continueInit() {
             splash.style.display = 'none';
             splash.classList.remove('hide');
         }
-    }, 500);
+    }, 300);
 
     const addDateEl = document.getElementById('addDate');
     if (addDateEl) addDateEl.value = new Date().toISOString().slice(0,10);
@@ -1790,31 +2075,68 @@ window.addEventListener('appinstalled', () => {
     if (installCard) installCard.style.display = 'none'; // Hide the card once installed
 });
 
-// iOS specific PWA prompt (iOS Safari doesn't support beforeinstallprompt)
+// Proactive check: if the app is already installed (detected via getInstalledRelatedApps),
+// hide the install card. This covers edge cases where beforeinstallprompt never fires.
+if (navigator.getInstalledRelatedApps) {
+    navigator.getInstalledRelatedApps().then(relatedApps => {
+        const isInstalled = relatedApps.some(app => app.id === 'home-finline-v2' || app.platform === 'webapp');
+        if (isInstalled) {
+            deferredPrompt = null;
+            const installCard = document.getElementById('installAppCard');
+            if (installCard) installCard.style.display = 'none';
+        }
+    }).catch(() => {});
+}
+
+// PWA install prompt detection (works on both iOS and Android)
 function checkIOSInstall() {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isAndroid = /Android/.test(navigator.userAgent);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     const installCard = document.getElementById('installAppCard');
     const installBtn = document.getElementById('installAppBtn');
     if (!installCard || !installBtn) return;
     
-    if (isIOS && !isStandalone) {
+    if (isStandalone) {
+        // Already installed — hide the card
+        installCard.style.display = 'none';
+        return;
+    }
+    
+    if (isIOS) {
+        // iOS: show instructional card (beforeinstallprompt not supported on iOS)
         installCard.style.display = 'block';
         installBtn.innerHTML = '<i class="fas fa-share-square"></i> Share → Add to Home Screen';
-        installBtn.style.pointerEvents = 'none';
-        installBtn.classList.add('btn-secondary');
-        installBtn.classList.remove('btn-primary');
+        installBtn.className = 'btn btn-primary btn-full';
+        installBtn.style.cssText = 'border-radius: 20px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,122,255,0.3);';
         const desc = document.getElementById('installAppDesc');
         if (desc) desc.innerHTML = 'Tap the <strong>Share</strong> icon <span style="font-size:1.2rem;">⎙</span> in Safari, then scroll down and tap <strong>"Add to Home Screen"</strong>.';
-    } else if (!isStandalone) {
-        // On Android, the beforeinstallprompt event will show the card
-        // But also check if already installed
-        if (!deferredPrompt) {
-            installCard.style.display = 'none';
+    } else if (isAndroid) {
+        // Android: show the card if deferredPrompt is available, or show manual instructions
+        if (deferredPrompt) {
+            installCard.style.display = 'block';
+            installBtn.innerHTML = '<i class="fas fa-download"></i> Add to Home Screen';
+            installBtn.className = 'btn btn-primary btn-full';
+            installBtn.style.cssText = 'border-radius: 20px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,122,255,0.3);';
+            const desc = document.getElementById('installAppDesc');
+            if (desc) desc.innerHTML = 'Get the full app experience. Install Home Finlytics on your home screen for quick access and instant offline use.';
+        } else {
+            // Show manual instructions for Android if beforeinstallprompt didn't fire
+            installCard.style.display = 'block';
+            installBtn.innerHTML = '<i class="fas fa-mobile-alt"></i> Tap for Instructions';
+            installBtn.className = 'btn btn-primary btn-full';
+            installBtn.style.cssText = 'border-radius: 20px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,122,255,0.3);';
+            const desc = document.getElementById('installAppDesc');
+            if (desc) desc.innerHTML = 'Open this page in <strong>Chrome</strong>, tap the <strong>⋮ menu</strong> and select <strong>"Add to Home Screen"</strong> or <strong>"Install app"</strong>.';
         }
     } else {
-        // Already installed
-        installCard.style.display = 'none';
+        // Desktop: show if deferredPrompt available
+        installCard.style.display = deferredPrompt ? 'block' : 'none';
+        if (deferredPrompt) {
+            installBtn.innerHTML = '<i class="fas fa-download"></i> Add to Home Screen';
+            installBtn.className = 'btn btn-primary btn-full';
+            installBtn.style.cssText = 'border-radius: 20px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,122,255,0.3);';
+        }
     }
 }
 

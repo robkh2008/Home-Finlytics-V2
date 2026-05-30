@@ -11,8 +11,6 @@ function refreshSettings() {
     const currencySelect = document.getElementById('currencySelect');
     if (currencySelect) currencySelect.value = state.currency;
 
-    const elecRateInput = document.getElementById('settingsElectricRate');
-    if (elecRateInput) elecRateInput.value = state.electricRate || 8;
     document.querySelectorAll('.currency-symbol').forEach(el => el.textContent = state.currency || '₹');
 
     const appLockTrack = document.getElementById('appLockToggleTrack');
@@ -20,23 +18,20 @@ function refreshSettings() {
     const appLockWrap = document.getElementById('appLockToggleWrap');
     if (appLockWrap) appLockWrap.setAttribute('aria-checked', !!state.appLock?.enabled ? 'true' : 'false');
 
-    // --- Budget settings list ---
+    // --- Budget settings list (per-user) ---
     populateBudgetCategories();
-    const budgetList = document.getElementById('budgetSettingsList');
-    const isAdmin = state.userRole === 'admin';
-    if (budgetList) {
-        budgetList.innerHTML = Object.entries(state.budgets || {}).map(([cat, limit]) => `
-            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);">
-                <span>${escapeHTML(cat)}</span><span>${formatCurrency(limit)}</span>
-                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-budget-btn" data-cat="${escapeHTML(cat)}"><i class="fas fa-times"></i></button>` : ''}
-            </div>`).join('') || '<p style="color:var(--text-tertiary);">No budgets set</p>';
-    }
+    populateBudgetUserSelector();
+    refreshBudgetSettingsList();
 
     // --- Categories & Subcategories ---
     const currentType = document.getElementById('settingsCatType')?.value || 'expense';
     refreshSettingsCatList(currentType);
     populateSettingsCategorySelect(currentType);
     refreshSubcategoryList(currentType);
+
+    // --- Payment Modes ---
+    if (typeof renderPaymentModeList === 'function') renderPaymentModeList();
+    if (typeof refreshPaymentModeSelects === 'function') refreshPaymentModeSelects();
 
     // --- Payer Management ---
     renderPayerList();
@@ -45,17 +40,121 @@ function refreshSettings() {
     if (typeof window.checkIOSInstall === 'function') window.checkIOSInstall();
 
     // --- House list ---
+    refreshHouseList();
+    
+    // --- Populate linked users checkboxes for house form ---
+    populateHouseLinkedUsersCheckboxes();
+}
+
+// NEW: Populate budget user selector dropdown
+function populateBudgetUserSelector() {
+    const select = document.getElementById('budgetForUser');
+    if (!select) return;
+    
+    if (!state.currentUser) {
+        setTimeout(populateBudgetUserSelector, 1000);
+        return;
+    }
+    
+    const currentUserId = getCurrentUserId();
+    const userName = state.currentUser?.name || state.userProfile?.displayName || 'Me';
+    const savedValue = select.value;
+    
+    // Build options: Shared (Groceries), MY Houses (Rent), then My Personal Budgets
+    let optionsHTML = '';
+    
+    // Shared budgets (groceries) — everyone can set
+    optionsHTML += `<optgroup label="🏠 Shared Budgets">`;
+    optionsHTML += `<option value="__shared__">🍳 Groceries (Shared Kitchen)</option>`;
+    
+    // Per-house rent budgets — ONLY houses the current user is linked to
+    const userHouseIds = getCurrentUserHouseIds();
+    const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
+    const myHouses = houses.filter(h => userHouseIds.includes(h.id));
+    myHouses.forEach(h => {
+        const houseKey = '__house_' + h.id;
+        optionsHTML += `<option value="${escapeHTML(houseKey)}">🏠 H${escapeHTML(h.houseNo)} Rent (${escapeHTML(h.tenant)})</option>`;
+    });
+    optionsHTML += `</optgroup>`;
+    
+    // Individual user budgets — ONLY current user
+    optionsHTML += `<optgroup label="👤 My Personal Budgets">`;
+    optionsHTML += `<option value="${escapeHTML(currentUserId)}">${escapeHTML(userName)} (My Expenses)</option>`;
+    optionsHTML += `</optgroup>`;
+    
+    select.innerHTML = optionsHTML;
+    
+    // Restore previous selection if still valid
+    if (savedValue) {
+        const exists = select.querySelector(`option[value="${savedValue.replace(/"/g, '\\"')}"]`);
+        if (exists) select.value = savedValue;
+    }
+}
+
+// NEW: Refresh budget settings list for selected scope
+function refreshBudgetSettingsList() {
+    const budgetList = document.getElementById('budgetSettingsList');
+    const select = document.getElementById('budgetForUser');
+    if (!budgetList) return;
+    
+    if (!state.currentUser) {
+        budgetList.innerHTML = '<p style="color:var(--text-tertiary);">Sign in to manage budgets.</p>';
+        return;
+    }
+    
+    const selectedScope = select?.value || getCurrentUserId();
+    
+    const scopeBudgets = state.budgets?.[selectedScope] || {};
+    const entries = Object.entries(scopeBudgets);
+    
+    // Determine scope label
+    let scopeLabel;
+    if (selectedScope === '__shared__') {
+        scopeLabel = '🍳 Shared Groceries';
+    } else if (selectedScope.startsWith('__house_')) {
+        const houseId = selectedScope.replace('__house_', '');
+        const house = (state.houses || []).find(h => h.id === houseId);
+        scopeLabel = '🏠 ' + (house ? `H${house.houseNo} Rent (${house.tenant})` : 'House Rent');
+    } else {
+        scopeLabel = '👤 My Personal Expenses';
+    }
+    
+    budgetList.innerHTML = entries.map(([cat, limit]) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--divider);">
+            <span>${escapeHTML(cat)}</span>
+            <span style="display:flex;align-items:center;gap:8px;">
+                <span>${formatCurrency(limit)}</span>
+                <button class="btn btn-xs btn-danger remove-budget-btn" data-scope="${escapeHTML(selectedScope)}" data-cat="${escapeHTML(cat)}"><i class="fas fa-times"></i></button>
+            </span>
+        </div>`).join('') || `<p style="color:var(--text-tertiary);">No budgets set for ${scopeLabel}</p>`;
+    
+    // Show hint for shared budgets
+    if (selectedScope === '__shared__') {
+        budgetList.innerHTML += '<p style="font-size:0.65rem;color:var(--accent);margin-top:8px;">💡 This budget tracks ALL groceries spending across the household.</p>';
+    } else if (selectedScope.startsWith('__house_')) {
+        budgetList.innerHTML += '<p style="font-size:0.65rem;color:var(--accent);margin-top:8px;">💡 This budget tracks rent for this house across all linked users.</p>';
+    }
+}
+
+// NEW: Refresh house list with linked users display
+function refreshHouseList() {
     const houseList = document.getElementById('settingsHouseList');
-    if (houseList) {
-        const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
-        houseList.innerHTML = houses.length === 0
-            ? '<p style="color:var(--text-tertiary);">No houses added yet.</p>'
-            : houses.map(h => `
+    const isAdmin = state.userRole === 'admin';
+    if (!houseList) return;
+    const houses = state.houses ? Object.values(state.houses).filter(Boolean) : [];
+    houseList.innerHTML = houses.length === 0
+        ? '<p style="color:var(--text-tertiary);">No houses added yet.</p>'
+        : houses.map(h => {
+            const linkedNames = (h.linkedUsers || []).map(lu => getUserDisplayName(lu)).join(', ') || 'None';
+            return `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--divider);">
                 <div style="flex:1;min-width:0;">
-                    <div style="font-weight:600;">H${escapeHTML(h.houseNo)} — ${escapeHTML(h.address)} ${h.isAdminHouse ? '<span style="font-size:0.6rem;background:rgba(90,200,250,0.2);color:var(--accent);padding:1px 6px;border-radius:6px;margin-left:4px;white-space:nowrap;">👤 My Residence</span>' : ''}</div>
+                    <div style="font-weight:600;">H${escapeHTML(h.houseNo)} — ${escapeHTML(h.address)}</div>
                     <div style="font-size:0.75rem;color:var(--text-secondary);">
-                        Tenant: ${escapeHTML(h.tenant)} · Owner: ${escapeHTML(h.owner)} · Rent: ${formatCurrency(h.rent)}
+                        Tenant: ${escapeHTML(h.tenant)} · Owner: ${escapeHTML(h.owner)} · Rent: ${formatCurrency(h.rent)}${h.waterBill ? ' · Water: ' + formatCurrency(h.waterBill) : ''}${h.motorBill ? ' · Motor: ' + formatCurrency(h.motorBill) : ''}${h.electricRate ? ' · ⚡₹' + h.electricRate + '/u' : ''}
+                    </div>
+                    <div style="font-size:0.65rem;color:var(--accent);margin-top:2px;">
+                        👥 Linked: ${escapeHTML(linkedNames)}
                     </div>
                 </div>
                 ${isAdmin ? `
@@ -63,8 +162,27 @@ function refreshSettings() {
                     <button class="btn btn-xs btn-secondary edit-house-btn" data-id="${escapeHTML(h.id)}" title="Edit House"><i class="fas fa-edit"></i></button>
                     <button class="btn btn-xs btn-danger remove-house-btn" data-id="${escapeHTML(h.id)}" title="Remove House"><i class="fas fa-times"></i></button>
                 </div>` : ''}
-            </div>`).join('');
+            </div>`;
+        }).join('');
+}
+
+// NEW: Populate linked users checkboxes for house form
+function populateHouseLinkedUsersCheckboxes() {
+    const container = document.getElementById('houseLinkedUsersCheckboxes');
+    if (!container) return;
+    
+    const members = getUserGroupMembers();
+    if (members.length === 0) {
+        container.innerHTML = '<span style="font-size:0.7rem;color:var(--text-tertiary);">No household members found. Add payers in Settings first.</span>';
+        return;
     }
+    
+    container.innerHTML = members.map(m => `
+        <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;cursor:pointer;">
+            <input type="checkbox" class="house-linked-user-cb" value="${escapeHTML(m.uid || m.displayName)}" style="accent-color:var(--accent);">
+            ${escapeHTML(m.displayName)}
+        </label>
+    `).join('');
 }
 
 // --- Helper functions (unchanged, but with null checks already present) ---
@@ -130,7 +248,6 @@ function refreshSubcategoryList(cachedType = null) {
 
 function renderPayerList() {
     const container = document.getElementById('payerList');
-    const isAdmin = state.userRole === 'admin';
     if (!container) return;
     const payers = state.payers ? Object.values(state.payers).filter(Boolean) : [];
     
@@ -139,20 +256,47 @@ function renderPayerList() {
     if (state.userProfile?.displayName) linkedNames.push(state.userProfile.displayName.toLowerCase());
     if (state.currentUser?.email) linkedNames.push(state.currentUser.email.split('@')[0].toLowerCase());
     
-    // Merge unique names from profiles if available (for other users)
     const allPayerNames = [...payers];
-    // If payers exist as array, ensure all unique
     
-    // Show linked status for names that match profile
     container.innerHTML = allPayerNames.length === 0
-        ? '<p style="color:var(--text-tertiary);">No payers added. Names auto-populate when users sign in.</p>'
+        ? '<p style="color:var(--text-tertiary);">No household members added. Add names of people who share expenses.</p>'
         : allPayerNames.map((p, index) => {
             const isLinked = linkedNames.some(n => n === p.toLowerCase());
             return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);align-items:center;">
-                <span>${escapeHTML(p)}${isLinked ? ' <span style="font-size:0.65rem;color:var(--accent);background:rgba(108,92,231,0.15);padding:1px 6px;border-radius:6px;">👤 linked</span>' : ''}</span>
-                ${isAdmin ? `<button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>` : ''}
+                <span>${escapeHTML(p)}${isLinked ? ' <span style="font-size:0.65rem;color:var(--accent);background:rgba(108,92,231,0.15);padding:1px 6px;border-radius:6px;">👤 you</span>' : ''}</span>
+                <button class="btn btn-xs btn-danger remove-payer-btn" data-index="${index}"><i class="fas fa-times"></i></button>
             </div>`;
         }).join('');
+}
+
+// NEW: Render payment mode list in settings
+function renderPaymentModeList() {
+    const container = document.getElementById('paymentModeList');
+    if (!container) return;
+    const modes = state.paymentModes || [];
+    
+    container.innerHTML = modes.length === 0
+        ? '<p style="color:var(--text-tertiary);">No payment modes added.</p>'
+        : modes.map((m, index) => `
+            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--divider);align-items:center;">
+                <span>💳 ${escapeHTML(m)}</span>
+                <button class="btn btn-xs btn-danger remove-payment-mode-btn" data-index="${index}"><i class="fas fa-times"></i></button>
+            </div>
+        `).join('');
+}
+
+// NEW: Refresh all payment mode dropdowns across the app
+function refreshPaymentModeSelects() {
+    const modes = state.paymentModes || [];
+    const selects = ['addPaymentMethod', 'receiptPaymentMode'];
+    selects.forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const currentVal = sel.value;
+        sel.innerHTML = modes.map(m => `<option value="${escapeHTML(m)}">${escapeHTML(m)}</option>`).join('');
+        // Restore selection if still valid
+        if (currentVal && modes.includes(currentVal)) sel.value = currentVal;
+    });
 }
 
 // Edit house — populates the add form fields with existing house data
@@ -165,8 +309,19 @@ function editHouseUI(houseId) {
     document.getElementById('newHouseTenant').value = house.tenant || '';
     document.getElementById('newHouseOwner').value = house.owner || '';
     document.getElementById('newHouseRent').value = house.rent || '';
-    const adminCb = document.getElementById('newHouseAdminResidence');
-    if (adminCb) adminCb.checked = !!house.isAdminHouse;
+    document.getElementById('newHouseWater').value = house.waterBill || '';
+    document.getElementById('newHouseMotor').value = house.motorBill || '';
+    document.getElementById('newHouseElecRate').value = house.electricRate || '';
+    
+    // Populate linked users checkboxes
+    populateHouseLinkedUsersCheckboxes();
+    // Check the boxes for users already linked
+    const linkedUsers = house.linkedUsers || [];
+    document.querySelectorAll('.house-linked-user-cb').forEach(cb => {
+        cb.checked = linkedUsers.some(lu => 
+            (typeof lu === 'string') && lu.toLowerCase() === cb.value.toLowerCase()
+        );
+    });
     
     // Change the Add button to an Update button
     const addBtn = document.getElementById('addHouseBtn');
@@ -185,6 +340,12 @@ function updateHouse(houseId) {
     const idx = (state.houses || []).findIndex(h => h.id === houseId);
     if (idx < 0) return;
     
+    // Collect linked users from checkboxes
+    const linkedUsers = [];
+    document.querySelectorAll('.house-linked-user-cb:checked').forEach(cb => {
+        linkedUsers.push(cb.value);
+    });
+    
     state.houses[idx] = {
         ...state.houses[idx],
         houseNo: document.getElementById('newHouseNo').value.trim(),
@@ -192,7 +353,10 @@ function updateHouse(houseId) {
         tenant: document.getElementById('newHouseTenant').value.trim(),
         owner: document.getElementById('newHouseOwner').value.trim(),
         rent: parseFloat(document.getElementById('newHouseRent').value) || 0,
-        isAdminHouse: !!document.getElementById('newHouseAdminResidence')?.checked,
+        waterBill: parseFloat(document.getElementById('newHouseWater').value) || 0,
+        motorBill: parseFloat(document.getElementById('newHouseMotor').value) || 0,
+        electricRate: parseFloat(document.getElementById('newHouseElecRate').value) || 0,
+        linkedUsers: linkedUsers,
     };
     
     if (!state.houses[idx].houseNo || !state.houses[idx].tenant) {
@@ -200,16 +364,16 @@ function updateHouse(houseId) {
         return;
     }
     
-    saveState();
-    // Reset button and clear fields
+    // Clean up
+    ['newHouseNo', 'newHouseAddress', 'newHouseTenant', 'newHouseOwner', 'newHouseRent', 'newHouseWater', 'newHouseMotor', 'newHouseElecRate'].forEach(id => document.getElementById(id).value = '');
+    document.querySelectorAll('.house-linked-user-cb').forEach(cb => cb.checked = false);
     const addBtn = document.getElementById('addHouseBtn');
     if (addBtn) {
-        addBtn.innerHTML = '<i class="fas fa-plus"></i> Add';
+        addBtn.innerHTML = 'Add';
         delete addBtn.dataset.editingHouseId;
     }
-    ['newHouseNo', 'newHouseAddress', 'newHouseTenant', 'newHouseOwner', 'newHouseRent'].forEach(id => document.getElementById(id).value = '');
-    const adminCb = document.getElementById('newHouseAdminResidence');
-    if (adminCb) adminCb.checked = false;
+    
+    saveState();
     refreshSettings();
     refreshAll();
     showToast('House updated!', 'home');
@@ -267,7 +431,7 @@ document.getElementById("loadUsersBtn")?.addEventListener("click", async functio
                             '<div style="font-size:0.7rem;color:var(--text-secondary);">' + escapeHTML(u.email) + '</div>' +
                             '<div style="font-size:0.65rem;color:var(--text-tertiary);">' +
                                 (u.lastSignIn ? 'Last: ' + new Date(u.lastSignIn).toLocaleDateString() : '') +
-                                (u.isAdmin ? ' <span style="color:var(--accent);margin-left:6px;">?? Admin</span>' : ' <span style="color:var(--text-tertiary);margin-left:6px;">User</span>') +
+                                (u.isAdmin ? ' <span style="color:var(--accent);margin-left:6px;">👑 Admin</span>' : ' <span style="color:var(--text-tertiary);margin-left:6px;">User</span>') +
                             '</div>' +
                         '</div>' +
                         (!isCurrentUser ? '<div style="display:flex;gap:4px;flex-shrink:0;">' +
