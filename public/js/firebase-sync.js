@@ -21,6 +21,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
+window._firebaseAuth = auth; // Expose for sign-out in app.js
 
 let unsubscribeNodes = [];
 let unsubscribePublicTxs = null;
@@ -445,6 +446,8 @@ window.adminRemoveUserRTDB = adminRemoveUserRTDB;
 // 8. Auth logic: Only sync if logged in — Google-first design
 window.showLoginUI = (isMandatory = false) => {
     if (document.getElementById('firebaseLoginModal')) return;
+    // Don't show Google login if PIN login screen is active
+    if (document.getElementById('pinLoginScreen')?.style.display === 'flex') return;
     const modal = document.createElement('div');
     modal.id = 'firebaseLoginModal';
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);animation:fbBackdropFade 0.3s ease-out;';

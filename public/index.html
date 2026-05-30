@@ -75,13 +75,31 @@
         <div class="splash-loader"></div>
     </div>
 
-    <!-- App Lock Screen -->
-    <div id="lockScreen" class="lock-screen" style="display:none;">
+    <!-- PIN Login Screen -->
+    <div id="pinLoginScreen" class="lock-screen" style="display:none;">
         <div class="lock-card">
             <div class="lock-icon"><i class="fas fa-shield-halved"></i></div>
             <h2 class="lock-title">Home Finlytics</h2>
-            <p class="lock-subtitle">App Locked</p>
-            <p class="lock-hint">Authenticate to continue</p>
+            <p class="lock-subtitle">Welcome Back!</p>
+            <p class="lock-hint" id="pinLoginUser">Enter your PIN to login</p>
+            <div class="lock-pin-wrap">
+                <input type="password" id="pinLoginInput" class="lock-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="· · · ·">
+                <div class="lock-pin-error" id="pinLoginError"></div>
+            </div>
+            <div class="lock-actions">
+                <button id="pinLoginBtn" class="btn btn-primary btn-full"><i class="fas fa-key"></i> Login with PIN</button>
+                <button id="pinLoginGoogleBtn" class="btn btn-ghost btn-full"><i class="fas fa-google"></i> Sign in with Google instead</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Lock Screen (privacy lock when enabled) -->
+    <div id="lockScreen" class="lock-screen" style="display:none;">
+        <div class="lock-card">
+            <div class="lock-icon"><i class="fas fa-lock"></i></div>
+            <h2 class="lock-title">App Locked</h2>
+            <p class="lock-subtitle">Authenticate to continue</p>
+            <p class="lock-hint">Unlock to resume your session</p>
             <div class="lock-pin-wrap" id="lockPinWrap">
                 <input type="password" id="lockPinInput" class="lock-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="· · · ·">
                 <div class="lock-pin-error" id="lockPinError"></div>
@@ -89,7 +107,7 @@
             <div class="lock-actions">
                 <button id="unlockWithBioBtn" class="btn btn-primary btn-full" style="display:none;"><i class="fas fa-fingerprint"></i> Unlock</button>
                 <button id="unlockWithPinBtn" class="btn btn-accent btn-full" style="display:none;"><i class="fas fa-hashtag"></i> Unlock with PIN</button>
-                <button id="lockSignOutBtn" class="btn btn-ghost btn-full" style="display:none;"><i class="fas fa-sign-out-alt"></i> Sign in as different user</button>
+                <button id="lockSignOutBtn" class="btn btn-ghost btn-full" style="display:none;"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
             </div>
         </div>
     </div>

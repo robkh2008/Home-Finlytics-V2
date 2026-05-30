@@ -1503,11 +1503,16 @@ function bindSettingsEvents() {
         if (!state.appLock) state.appLock = { enabled: false, credentialId: null, pinHash: null };
         state.appLock.pinHash = simpleHash(pin);
         state.appLock.enabled = true;
+        // Store linked account info for PIN login
+        if (state.currentUser) {
+            state.appLock.linkedEmail = state.currentUser.email || '';
+            state.appLock.linkedDisplayName = state.currentUser.name || '';
+        }
         saveState();
         refreshSettings();
-        if (status) status.textContent = '✅ PIN set successfully!';
+        if (status) status.textContent = '✅ PIN set successfully! You can now login with this PIN.';
         document.getElementById('pinSetupInput').value = '';
-        showToast('PIN set successfully!', 'check-circle');
+        showToast('PIN set! You can now login with PIN.', 'check-circle');
     });
     
     document.getElementById('pinSetupClearBtn')?.addEventListener('click', () => {
@@ -1745,6 +1750,7 @@ function bindEvents() {
     bindAnalyticsEvents();
     bindReceiptEvents();
     bindProfileEvents();
+    bindPinLoginEvents();
     bindLockScreenEvents();
 }
 
@@ -1877,12 +1883,91 @@ function setupPullToRefresh() {
     });
 }
 
-// ==================== APP UNLOCK (Biometric + PIN) ====================
+// ==================== PIN LOGIN (Alternative to Google) ====================
+function showPinLogin() {
+    const screen = document.getElementById('pinLoginScreen');
+    if (!screen) return;
+    
+    // Show the user's name if we have it
+    const userNameLabel = document.getElementById('pinLoginUser');
+    const cachedName = state.linkedUserDisplayName || state.appLock?.linkedDisplayName || 'User';
+    if (userNameLabel) userNameLabel.textContent = `Welcome back, ${cachedName}`;
+    
+    const pinInput = document.getElementById('pinLoginInput');
+    const pinError = document.getElementById('pinLoginError');
+    if (pinInput) pinInput.value = '';
+    if (pinError) pinError.textContent = '';
+    
+    screen.style.display = 'flex';
+    document.getElementById('splashScreen').style.display = 'none';
+    window._appInitialized = true;
+    
+    setTimeout(() => pinInput?.focus(), 400);
+}
+
+function bindPinLoginEvents() {
+    const pinInput = document.getElementById('pinLoginInput');
+    const pinBtn = document.getElementById('pinLoginBtn');
+    const pinError = document.getElementById('pinLoginError');
+    const googleBtn = document.getElementById('pinLoginGoogleBtn');
+    
+    const doPinLogin = () => {
+        const val = pinInput?.value || '';
+        if (val.length !== 4 || !/^\d{4}$/.test(val)) {
+            if (pinError) pinError.textContent = 'Please enter your 4-digit PIN.';
+            return;
+        }
+        if (verifyPin(val)) {
+            // Restore user identity from cached data
+            const email = state.linkedUserEmail || state.appLock?.linkedEmail || '';
+            const displayName = state.linkedUserDisplayName || state.appLock?.linkedDisplayName || email.split('@')[0];
+            state.currentUser = {
+                uid: email || 'pin-user',
+                name: displayName,
+                email: email || ''
+            };
+            state.userProfile = { displayName, email };
+            state.userRole = 'user'; // Will be updated when Firebase connects
+            
+            document.getElementById('pinLoginScreen').style.display = 'none';
+            window._appInitialized = false;
+            saveState();
+            continueInit();
+        } else {
+            if (pinError) pinError.textContent = 'Incorrect PIN. Try again.';
+            if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+        }
+    };
+    
+    if (pinBtn) pinBtn.addEventListener('click', doPinLogin);
+    
+    if (pinInput) {
+        pinInput.addEventListener('input', () => {
+            if (pinError) pinError.textContent = '';
+            if (pinInput.value.length >= 4) doPinLogin();
+        });
+        
+        pinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); doPinLogin(); }
+        });
+    }
+    
+    if (googleBtn) {
+        googleBtn.addEventListener('click', () => {
+            document.getElementById('pinLoginScreen').style.display = 'none';
+            window._appInitialized = false;
+            if (typeof window.showLoginUI === 'function') {
+                window.showLoginUI(true);
+            }
+        });
+    }
+}
+
+// ==================== APP LOCK (Privacy lock - optional) ====================
 function showLockScreen() {
     const lockScreen = document.getElementById('lockScreen');
     if (!lockScreen) return;
     
-    // Show/hide buttons based on available methods
     const bioBtn = document.getElementById('unlockWithBioBtn');
     const pinBtn = document.getElementById('unlockWithPinBtn');
     const signOutBtn = document.getElementById('lockSignOutBtn');
@@ -1898,11 +1983,10 @@ function showLockScreen() {
     
     if (bioBtn) bioBtn.style.display = hasBio ? 'flex' : 'none';
     if (pinBtn) pinBtn.style.display = hasPin ? 'flex' : 'none';
-    if (pinWrap) pinWrap.style.display = hasPin ? 'block' : 'block'; // Show always for PIN input
+    if (pinWrap) pinWrap.style.display = hasPin ? 'block' : 'block';
     if (signOutBtn) signOutBtn.style.display = 'flex';
     
     if (hasBio) {
-        // Auto-trigger biometrics
         setTimeout(() => bioBtn?.click(), 300);
     } else if (hasPin) {
         setTimeout(() => pinInput?.focus(), 300);
@@ -1916,12 +2000,13 @@ async function triggerUnlock() {
     const hasPin = !!(state.appLock?.pinHash);
     
     if (!hasBio && !hasPin) {
-        window._appInitialized = false;
-        return continueInit();
+        return;
     }
     
     showLockScreen();
 }
+
+// PIN unlock (reuses verifyPin from above)
 
 // PIN unlock
 function verifyPin(enteredPin) {
@@ -2023,13 +2108,14 @@ function bindLockScreenEvents() {
     
     if (signOutBtn) {
         signOutBtn.addEventListener('click', async () => {
-            // Sign out from Firebase and disable lock
             state.appLock = { enabled: false, credentialId: null, pinHash: null };
             saveState();
             document.getElementById('lockScreen').style.display = 'none';
-            if (typeof auth?.signOut === 'function') {
-                await auth.signOut();
-            }
+            try { 
+                // Use the global Firebase auth reference
+                const fbAuth = window._firebaseAuth;
+                if (fbAuth) await fbAuth.signOut();
+            } catch(e) { /* ignore */ }
             localStorage.removeItem('home_finlytics_state');
             window.location.reload();
         });
@@ -2062,6 +2148,12 @@ window.handleAuthStateChanged = async (user) => {
         const name = displayName;
         const isNewUser = previousUid !== user.uid;
         state.currentUser = { uid: user.uid, name: name, email: user.email };
+        
+        // Update PIN-linked account info so PIN login works for this user
+        if (state.appLock?.pinHash) {
+            state.appLock.linkedEmail = user.email;
+            state.appLock.linkedDisplayName = name;
+        }
         
         // Auto-add user's display name to payer list so it appears in manage payers
         if (!state.payers) state.payers = [];
@@ -2113,18 +2205,13 @@ window.handleAuthStateChanged = async (user) => {
 
         const loginModal = document.getElementById('firebaseLoginModal');
         if (loginModal) loginModal.remove();
+        // Also hide any PIN login screen that might be showing
+        const pinLogin = document.getElementById('pinLoginScreen');
+        if (pinLogin) pinLogin.style.display = 'none';
 
         if (!window._appInitialized) {
-            if (state.appLock && state.appLock.enabled) {
-                // Lock path: hide splash, show lock screen.
-                window._appInitialized = true;
-                document.getElementById('splashScreen').style.display = 'none';
-                document.getElementById('lockScreen').style.display = 'flex';
-                triggerUnlock();
-            } else {
-                // Normal path: continueInit() will set _appInitialized
-                continueInit();
-            }
+            // Normal path: continueInit() will set _appInitialized
+            continueInit();
         } else if (!wasUser || roleChanged) {
             refreshAll();
         }
@@ -2155,7 +2242,14 @@ window.handleAuthStateChanged = async (user) => {
         applyRoleRestrictions();
         
         if (!window._appInitialized) {
-            continueInit();
+            // Check if user has PIN set and has previously been authenticated
+            const hasPin = !!(state.appLock?.pinHash);
+            const hasPrevUser = !!(state.linkedUserEmail || state.appLock?.linkedEmail);
+            if (hasPin && hasPrevUser) {
+                showPinLogin();
+            } else {
+                continueInit();
+            }
         }
 
         if (typeof window.showLoginUI === 'function') {
