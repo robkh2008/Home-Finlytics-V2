@@ -17,6 +17,20 @@ function refreshSettings() {
     if (appLockTrack) appLockTrack.classList.toggle('active', !!state.appLock?.enabled);
     const appLockWrap = document.getElementById('appLockToggleWrap');
     if (appLockWrap) appLockWrap.setAttribute('aria-checked', !!state.appLock?.enabled ? 'true' : 'false');
+    
+    // Show/hide PIN setup section
+    const pinSection = document.getElementById('pinSetupSection');
+    if (pinSection) {
+        pinSection.style.display = state.appLock?.enabled ? 'block' : 'none';
+    }
+    const pinStatus = document.getElementById('pinSetupStatus');
+    if (pinStatus) {
+        if (state.appLock?.pinHash) {
+            pinStatus.textContent = '✅ PIN is set. Enter a new PIN to change it.';
+        } else {
+            pinStatus.textContent = 'Set a 4-digit PIN as a fallback unlock method.';
+        }
+    }
 
     // --- Budget settings list (per-user) ---
     populateBudgetCategories();

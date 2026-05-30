@@ -18,7 +18,7 @@ let state = {
     activeScreen: 'screenDashboard',
     lastUpdated: 0,
     hasUnsyncedChanges: false,
-    appLock: { enabled: false, credentialId: null },
+    appLock: { enabled: false, credentialId: null, pinHash: null },
     currentUser: null,
     userRole: 'user', // 'admin' or 'user'
     userProfile: null,  // { displayName, email } from Firebase profiles/{uid}
@@ -152,6 +152,9 @@ function loadState() {
         if (!state.budgets) state.budgets = {};
         if (!state.recurringTemplates) state.recurringTemplates = [];
         if (!state.deletedTxIds) state.deletedTxIds = [];
+        if (state.appLock && state.appLock.pinHash === undefined) {
+            state.appLock.pinHash = null;
+        }
     } catch (e) { console.warn('Local storage disabled'); }
     
     // CRITICAL: JSON serialization destroys Set objects — always reinitialize
@@ -1435,41 +1438,50 @@ function bindSettingsEvents() {
         }, 'DELETE');
     });
 
-    // App Lock (Biometrics)
+    // App Lock (Biometrics + PIN)
     document.getElementById('appLockToggleWrap')?.addEventListener('click', async () => {
-        if (!window.PublicKeyCredential) {
-            showToast('Biometrics not supported on this device/browser.', 'exclamation-triangle');
-            return;
-        }
         if (state.appLock?.enabled) {
-            state.appLock = { enabled: false, credentialId: null };
+            state.appLock = { enabled: false, credentialId: null, pinHash: null };
             saveState();
             refreshSettings();
             showToast('App Lock disabled.', 'unlock');
         } else {
-            try {
-                const challenge = new Uint8Array(32);
-                crypto.getRandomValues(challenge);
-                const userId = new Uint8Array(16);
-                crypto.getRandomValues(userId);
+            // Try biometrics if available, but still enable app lock even without it
+            if (window.PublicKeyCredential) {
+                try {
+                    const challenge = new Uint8Array(32);
+                    crypto.getRandomValues(challenge);
+                    const userId = new Uint8Array(16);
+                    crypto.getRandomValues(userId);
 
-                const pubKey = {
-                    challenge,
-                    rp: { name: "Home Finlytics" },
-                    user: { id: userId, name: "User", displayName: "User" },
-                    pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-                    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
-                    timeout: 60000,
-                    attestation: "none"
-                };
-                const cred = await navigator.credentials.create({ publicKey: pubKey });
-                state.appLock = { enabled: true, credentialId: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.rawId))) };
-                saveState();
-                refreshSettings();
-                showToast('App Lock enabled!', 'lock');
-            } catch (err) {
-                console.error(err);
-                showToast('Failed to setup App Lock.', 'times-circle');
+                    const pubKey = {
+                        challenge,
+                        rp: { name: "Home Finlytics" },
+                        user: { id: userId, name: "User", displayName: "User" },
+                        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+                        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+                        timeout: 60000,
+                        attestation: "none"
+                    };
+                    const cred = await navigator.credentials.create({ publicKey: pubKey });
+                    state.appLock = { enabled: true, credentialId: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.rawId))), pinHash: state.appLock?.pinHash || null };
+                    saveState();
+                    refreshSettings();
+                    showToast('App Lock enabled with biometrics!', 'lock');
+                    return;
+                } catch (err) {
+                    // Biometrics setup failed — fall through to enable with PIN only
+                    console.warn('Biometrics setup failed:', err);
+                }
+            }
+            // Enable with PIN only (no biometrics available/failed)
+            state.appLock = { enabled: true, credentialId: null, pinHash: state.appLock?.pinHash || null };
+            saveState();
+            refreshSettings();
+            if (state.appLock?.pinHash) {
+                showToast('App Lock enabled with PIN!', 'lock');
+            } else {
+                showToast('App Lock enabled. Set a PIN below.', 'lock');
             }
         }
     });
@@ -1477,6 +1489,39 @@ function bindSettingsEvents() {
         if (e.key === 'Enter' || e.key === ' ') { 
             e.preventDefault(); 
             document.getElementById('appLockToggleWrap').click(); 
+        }
+    });
+    
+    // PIN Setup
+    document.getElementById('pinSetupSaveBtn')?.addEventListener('click', () => {
+        const pin = document.getElementById('pinSetupInput')?.value || '';
+        const status = document.getElementById('pinSetupStatus');
+        if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+            if (status) status.textContent = 'Please enter exactly 4 digits.';
+            return;
+        }
+        if (!state.appLock) state.appLock = { enabled: false, credentialId: null, pinHash: null };
+        state.appLock.pinHash = simpleHash(pin);
+        state.appLock.enabled = true;
+        saveState();
+        refreshSettings();
+        if (status) status.textContent = '✅ PIN set successfully!';
+        document.getElementById('pinSetupInput').value = '';
+        showToast('PIN set successfully!', 'check-circle');
+    });
+    
+    document.getElementById('pinSetupClearBtn')?.addEventListener('click', () => {
+        if (state.appLock) {
+            state.appLock.pinHash = null;
+            // If no biometrics either, disable app lock
+            if (!state.appLock.credentialId) {
+                state.appLock.enabled = false;
+            }
+            saveState();
+            refreshSettings();
+            document.getElementById('pinSetupInput').value = '';
+            document.getElementById('pinSetupStatus').textContent = 'PIN removed.';
+            showToast('PIN cleared.', 'trash-alt');
         }
     });
 
@@ -1700,9 +1745,7 @@ function bindEvents() {
     bindAnalyticsEvents();
     bindReceiptEvents();
     bindProfileEvents();
-
-    // Manual unlock button trigger
-    document.getElementById('unlockBtn')?.addEventListener('click', triggerUnlock);
+    bindLockScreenEvents();
 }
 
 // ==================== PROFILE EVENT BINDING ====================
@@ -1834,39 +1877,162 @@ function setupPullToRefresh() {
     });
 }
 
-// ==================== BIOMETRIC UNLOCK ====================
+// ==================== APP UNLOCK (Biometric + PIN) ====================
+function showLockScreen() {
+    const lockScreen = document.getElementById('lockScreen');
+    if (!lockScreen) return;
+    
+    // Show/hide buttons based on available methods
+    const bioBtn = document.getElementById('unlockWithBioBtn');
+    const pinBtn = document.getElementById('unlockWithPinBtn');
+    const signOutBtn = document.getElementById('lockSignOutBtn');
+    const pinInput = document.getElementById('lockPinInput');
+    const pinWrap = document.getElementById('lockPinWrap');
+    const pinError = document.getElementById('lockPinError');
+    
+    if (pinError) pinError.textContent = '';
+    if (pinInput) pinInput.value = '';
+    
+    const hasBio = !!(window.PublicKeyCredential && state.appLock?.credentialId);
+    const hasPin = !!(state.appLock?.pinHash);
+    
+    if (bioBtn) bioBtn.style.display = hasBio ? 'flex' : 'none';
+    if (pinBtn) pinBtn.style.display = hasPin ? 'flex' : 'none';
+    if (pinWrap) pinWrap.style.display = hasPin ? 'block' : 'block'; // Show always for PIN input
+    if (signOutBtn) signOutBtn.style.display = 'flex';
+    
+    if (hasBio) {
+        // Auto-trigger biometrics
+        setTimeout(() => bioBtn?.click(), 300);
+    } else if (hasPin) {
+        setTimeout(() => pinInput?.focus(), 300);
+    }
+    
+    lockScreen.style.display = 'flex';
+}
+
 async function triggerUnlock() {
-    if (!state.appLock?.credentialId) {
-        // No lock configured — bypass the guard and init directly
+    const hasBio = !!(window.PublicKeyCredential && state.appLock?.credentialId);
+    const hasPin = !!(state.appLock?.pinHash);
+    
+    if (!hasBio && !hasPin) {
         window._appInitialized = false;
         return continueInit();
     }
-    try {
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        
-        const binaryString = window.atob(state.appLock.credentialId);
-        const credIdBytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            credIdBytes[i] = binaryString.charCodeAt(i);
-        }
+    
+    showLockScreen();
+}
 
-        const pubKey = {
-            challenge,
-            allowCredentials: [{ type: "public-key", id: credIdBytes }],
-            userVerification: "required",
-            timeout: 60000
-        };
+// PIN unlock
+function verifyPin(enteredPin) {
+    if (!state.appLock?.pinHash) return false;
+    const hash = simpleHash(enteredPin);
+    return hash === state.appLock.pinHash;
+}
+
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return 'h' + Math.abs(hash).toString(36);
+}
+
+// Set up lock screen event listeners
+function bindLockScreenEvents() {
+    const bioBtn = document.getElementById('unlockWithBioBtn');
+    const pinBtn = document.getElementById('unlockWithPinBtn');
+    const pinInput = document.getElementById('lockPinInput');
+    const pinError = document.getElementById('lockPinError');
+    const signOutBtn = document.getElementById('lockSignOutBtn');
+    
+    if (bioBtn) {
+        bioBtn.addEventListener('click', async () => {
+            try {
+                const challenge = new Uint8Array(32);
+                crypto.getRandomValues(challenge);
+                
+                const binaryString = window.atob(state.appLock.credentialId);
+                const credIdBytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    credIdBytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                const pubKey = {
+                    challenge,
+                    allowCredentials: [{ type: "public-key", id: credIdBytes }],
+                    userVerification: "required",
+                    timeout: 60000
+                };
+                
+                await navigator.credentials.get({ publicKey: pubKey });
+                
+                document.getElementById('lockScreen').style.display = 'none';
+                window._appInitialized = false;
+                continueInit();
+            } catch (err) {
+                console.error(err);
+                if (pinError) pinError.textContent = 'Biometric failed. Try PIN or retry.';
+            }
+        });
+    }
+    
+    if (pinBtn) {
+        pinBtn.addEventListener('click', () => {
+            const val = pinInput?.value || '';
+            if (val.length < 4) {
+                if (pinError) pinError.textContent = 'Please enter your 4-digit PIN.';
+                return;
+            }
+            if (verifyPin(val)) {
+                document.getElementById('lockScreen').style.display = 'none';
+                window._appInitialized = false;
+                continueInit();
+            } else {
+                if (pinError) pinError.textContent = 'Incorrect PIN. Try again.';
+                if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+            }
+        });
+    }
+    
+    if (pinInput) {
+        pinInput.addEventListener('input', () => {
+            if (pinError) pinError.textContent = '';
+            if (pinInput.value.length >= 4) {
+                // Auto-verify on 4 digits
+                if (verifyPin(pinInput.value)) {
+                    document.getElementById('lockScreen').style.display = 'none';
+                    window._appInitialized = false;
+                    continueInit();
+                } else {
+                    if (pinError) pinError.textContent = 'Incorrect PIN.';
+                    pinInput.value = '';
+                }
+            }
+        });
         
-        await navigator.credentials.get({ publicKey: pubKey });
-        
-        // Authentication Success — bypass guard since lock path set the flag
-        document.getElementById('lockScreen').style.display = 'none';
-        window._appInitialized = false;
-        continueInit();
-    } catch (err) {
-        console.error(err);
-        showToast('Authentication failed.', 'times-circle');
+        pinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                pinBtn?.click();
+            }
+        });
+    }
+    
+    if (signOutBtn) {
+        signOutBtn.addEventListener('click', async () => {
+            // Sign out from Firebase and disable lock
+            state.appLock = { enabled: false, credentialId: null, pinHash: null };
+            saveState();
+            document.getElementById('lockScreen').style.display = 'none';
+            if (typeof auth?.signOut === 'function') {
+                await auth.signOut();
+            }
+            localStorage.removeItem('home_finlytics_state');
+            window.location.reload();
+        });
     }
 }
 

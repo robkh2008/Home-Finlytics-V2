@@ -76,11 +76,22 @@
     </div>
 
     <!-- App Lock Screen -->
-    <div id="lockScreen" class="splash-screen" style="display:none; z-index:9998; background:var(--bg-primary);">
-        <div class="splash-icon" style="animation:none;"><i class="fas fa-lock"></i></div>
-        <h2 style="margin-bottom:8px;">App Locked</h2>
-        <p style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:24px;">Please authenticate to continue.</p>
-        <button id="unlockBtn" class="btn btn-primary"><i class="fas fa-fingerprint"></i> Unlock App</button>
+    <div id="lockScreen" class="lock-screen" style="display:none;">
+        <div class="lock-card">
+            <div class="lock-icon"><i class="fas fa-shield-halved"></i></div>
+            <h2 class="lock-title">Home Finlytics</h2>
+            <p class="lock-subtitle">App Locked</p>
+            <p class="lock-hint">Authenticate to continue</p>
+            <div class="lock-pin-wrap" id="lockPinWrap">
+                <input type="password" id="lockPinInput" class="lock-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="· · · ·">
+                <div class="lock-pin-error" id="lockPinError"></div>
+            </div>
+            <div class="lock-actions">
+                <button id="unlockWithBioBtn" class="btn btn-primary btn-full" style="display:none;"><i class="fas fa-fingerprint"></i> Unlock</button>
+                <button id="unlockWithPinBtn" class="btn btn-accent btn-full" style="display:none;"><i class="fas fa-hashtag"></i> Unlock with PIN</button>
+                <button id="lockSignOutBtn" class="btn btn-ghost btn-full" style="display:none;"><i class="fas fa-sign-out-alt"></i> Sign in as different user</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Container -->
@@ -663,6 +674,16 @@
                                     <div class="toggle-switch-thumb"></div>
                                 </div>
                             </div>
+                        </div>
+                        <!-- PIN Setup (shown when App Lock is enabled) -->
+                        <div id="pinSetupSection" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--divider);">
+                            <div style="font-weight:500;margin-bottom:8px;">PIN Code</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="password" id="pinSetupInput" class="form-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="Set 4-digit PIN" style="flex:1;min-height:44px;text-align:center;font-size:1.2rem;letter-spacing:6px;">
+                                <button id="pinSetupSaveBtn" class="btn btn-primary" style="min-height:44px;padding:0 18px;flex-shrink:0;"><i class="fas fa-check"></i></button>
+                                <button id="pinSetupClearBtn" class="btn btn-secondary" style="min-height:44px;padding:0 14px;flex-shrink:0;"><i class="fas fa-times"></i></button>
+                            </div>
+                            <p id="pinSetupStatus" style="font-size:0.75rem;color:var(--text-tertiary);margin-top:6px;">Set a PIN as a fallback unlock method.</p>
                         </div>
                         <div id="settingsSignOutWrap" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--divider);">
                             <p style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">Logged in to Cloud Sync as <strong id="settingsUserEmail" style="color:var(--text-primary);"></strong>.</p>
