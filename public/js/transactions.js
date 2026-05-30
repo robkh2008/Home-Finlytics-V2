@@ -370,10 +370,14 @@ function updateBulkBar() {
 function editTransactionUI(id) {
     const tx = getVisibleTransactions().find(t => t.id === id);
     if (tx) {
+        navigateTo('screenAdd');
+        
+        // Set editId AFTER navigateTo (which resets it)
         const form = document.getElementById('addTransactionForm');
         if (form) form.dataset.editId = id;
         
-        navigateTo('screenAdd');
+        // Update button text to "Update"
+        if (typeof refreshAddForm === 'function') refreshAddForm();
         
         document.getElementById('addType').value = tx.type;
         

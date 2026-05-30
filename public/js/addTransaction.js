@@ -183,19 +183,17 @@ function updateTransaction(id, updates) {
 }
 
 function deleteTransaction(id) {
+    // Track this deletion so cloud sync doesn't resurrect it
+    if (!state.deletedTxIds.includes(id)) {
+        state.deletedTxIds.push(id);
+    }
+    
     // Immediately remove from Firebase caches to prevent listener from re-adding
     if (window._firebasePublicCache && window._firebasePublicCache[id]) {
         delete window._firebasePublicCache[id];
-        // Schedule immediate Firebase write for the deletion (skip debounce)
-        if (typeof window.saveStateToFirebase === 'function' && navigator.onLine && state.currentUser) {
-            window.saveStateToFirebase(state).catch(() => {});
-        }
     }
     if (window._firebasePrivateCache && window._firebasePrivateCache[id]) {
         delete window._firebasePrivateCache[id];
-        if (typeof window.saveStateToFirebase === 'function' && navigator.onLine && state.currentUser) {
-            window.saveStateToFirebase(state).catch(() => {});
-        }
     }
     
     state.transactions = state.transactions.filter(t => t.id !== id);
@@ -208,6 +206,12 @@ function deleteTransaction(id) {
 
 function deleteMultipleTransactions(ids) {
     state.transactions = state.transactions.filter(t => !ids.has(t.id));
+    // Track all deleted IDs so cloud sync doesn't resurrect them
+    ids.forEach(id => {
+        if (!state.deletedTxIds.includes(id)) {
+            state.deletedTxIds.push(id);
+        }
+    });
     state.selectedTxIds.clear();
     state.bulkSelectMode = false;
     saveState();
@@ -230,8 +234,14 @@ function refreshAddForm() {
     filterCategoryChipsByType(addType);
     
     const submitBtn = document.querySelector('#addTransactionForm button[type="submit"]');
+    const isEditing = form && form.dataset.editId && form.dataset.editId !== '';
     if (submitBtn) {
-        submitBtn.innerHTML = isEditingTemplate ? '<i class="fas fa-save"></i> Update Template' : '<i class="fas fa-save"></i> Save';
+        submitBtn.innerHTML = isEditingTemplate ? '<i class="fas fa-save"></i> Update Template' : isEditing ? '<i class="fas fa-pen"></i> Update' : '<i class="fas fa-save"></i> Save';
+    }
+    // Also update the sticky save bar button
+    const stickyBtn = document.getElementById('stickySaveBtn');
+    if (stickyBtn) {
+        stickyBtn.innerHTML = isEditingTemplate ? '<i class="fas fa-save"></i> Update Template' : isEditing ? '<i class="fas fa-pen"></i> Update' : '<i class="fas fa-save"></i> Save';
     }
     
     const recurringCheckboxWrap = document.getElementById('addIsRecurring')?.closest('.form-group');

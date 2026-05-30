@@ -26,7 +26,8 @@ let state = {
         id: 'default',
         name: 'My Household',
         members: []     // { uid, displayName, email }
-    }
+    },
+    deletedTxIds: []  // Track deleted transaction IDs across sessions
 };
 let deferredPrompt;
 
@@ -52,8 +53,9 @@ function resetState() {
     state.recurringTemplates = [];
     state.selectedTxIds = new Set();
     state.bulkSelectMode = false;
-    state.lastUpdated = 0; // Reset to 0 so cloud data always takes precedence
+    state.lastUpdated = 0;
     state.hasUnsyncedChanges = false;
+    state.deletedTxIds = [];
 }
 
 // Firebase Sync override (Replacing storage.js local storage logic)
@@ -149,6 +151,7 @@ function loadState() {
         
         if (!state.budgets) state.budgets = {};
         if (!state.recurringTemplates) state.recurringTemplates = [];
+        if (!state.deletedTxIds) state.deletedTxIds = [];
     } catch (e) { console.warn('Local storage disabled'); }
     
     // CRITICAL: JSON serialization destroys Set objects — always reinitialize
@@ -268,6 +271,10 @@ function onFirebaseDataReceived(firebaseData) {
 
     // Ensure core structures exist if Firebase returned null (Firebase removes empty arrays/objects)
     if (!state.transactions) state.transactions = [];
+    // Filter out any transactions that were locally deleted (survives cloud overwrite)
+    if (state.deletedTxIds && state.deletedTxIds.length > 0) {
+        state.transactions = state.transactions.filter(t => !state.deletedTxIds.includes(t.id));
+    }
     if (!state.categories) state.categories = { expense: [], groceries: [] };
     
     if (state.categories.expense) state.categories.expense = Object.values(state.categories.expense).filter(Boolean);
