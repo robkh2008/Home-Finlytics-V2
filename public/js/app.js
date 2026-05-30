@@ -1890,7 +1890,7 @@ function showPinLogin() {
     
     // Show the user's name if we have it
     const userNameLabel = document.getElementById('pinLoginUser');
-    const cachedName = state.linkedUserDisplayName || state.appLock?.linkedDisplayName || 'User';
+    const cachedName = state.appLock?.linkedDisplayName || 'User';
     if (userNameLabel) userNameLabel.textContent = `Welcome back, ${cachedName}`;
     
     const pinInput = document.getElementById('pinLoginInput');
@@ -1898,8 +1898,10 @@ function showPinLogin() {
     if (pinInput) pinInput.value = '';
     if (pinError) pinError.textContent = '';
     
-    screen.style.display = 'flex';
+    // Hide splash and show PIN login
     document.getElementById('splashScreen').style.display = 'none';
+    document.getElementById('appShell').style.display = 'none';
+    screen.style.display = 'flex';
     window._appInitialized = true;
     
     setTimeout(() => pinInput?.focus(), 400);
@@ -1955,6 +1957,7 @@ function bindPinLoginEvents() {
     if (googleBtn) {
         googleBtn.addEventListener('click', () => {
             document.getElementById('pinLoginScreen').style.display = 'none';
+            document.getElementById('appShell').style.display = 'flex';
             window._appInitialized = false;
             if (typeof window.showLoginUI === 'function') {
                 window.showLoginUI(true);
@@ -2246,16 +2249,15 @@ window.handleAuthStateChanged = async (user) => {
         if (!window._appInitialized) {
             // Check if user has PIN set and has previously been authenticated
             const hasPin = !!(state.appLock?.pinHash);
-            const hasPrevUser = !!(state.linkedUserEmail || state.appLock?.linkedEmail);
+            const hasPrevUser = !!(state.appLock?.linkedEmail);
             if (hasPin && hasPrevUser) {
                 showPinLogin();
             } else {
                 continueInit();
+                if (typeof window.showLoginUI === 'function') {
+                    window.showLoginUI(true);
+                }
             }
-        }
-
-        if (typeof window.showLoginUI === 'function') {
-            window.showLoginUI(true);
         }
     }
 };
