@@ -1,5 +1,5 @@
 // Change this version number whenever you deploy an update
-const CACHE_NAME = 'finlytics-cache-v26';
+const CACHE_NAME = 'finlytics-cache-v27';
 
 // Add the core files you want to cache for instant offline loading
 // NOTE: app.js, firebase-sync.js, settings.js are excluded from SW cache
