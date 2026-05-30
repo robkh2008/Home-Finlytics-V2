@@ -223,23 +223,36 @@ function attachTransactionEvents(container) {
 
     container.querySelectorAll('.tx-row').forEach(row => {
         const id = row.dataset.id;
-        let startX = 0;
+        let startX = 0, startY = 0;
 
         row.addEventListener('touchstart', e => {
-            if (!state.bulkSelectMode) startX = e.touches[0].clientX;
+            if (!state.bulkSelectMode) {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        row.addEventListener('touchmove', e => {
+            if (state.bulkSelectMode) return;
+            const dx = Math.abs(e.touches[0].clientX - startX);
+            const dy = Math.abs(e.touches[0].clientY - startY);
+            // If scrolling vertically more than horizontally, cancel swipe
+            if (dy > dx && dy > 10) {
+                startX = 0; // Reset so touchend won't trigger swipe
+            }
         }, { passive: true });
 
         row.addEventListener('touchend', e => {
-            if (state.bulkSelectMode) return;
+            if (state.bulkSelectMode || startX === 0) return;
             const diff = startX - e.changedTouches[0].clientX;
-            if (diff > 40) {
+            if (diff > 80) {
                 // Close previous swiped row
                 if (currentSwipedRow && currentSwipedRow !== row) {
                     currentSwipedRow.classList.remove('swiped');
                 }
                 row.classList.add('swiped');
                 currentSwipedRow = row;
-            } else if (diff < -20) {
+            } else if (diff < -30) {
                 row.classList.remove('swiped');
                 currentSwipedRow = null;
             }

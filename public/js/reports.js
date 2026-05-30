@@ -87,25 +87,26 @@ async function renderAnalyticsCharts(filteredTxs) {
     const filtered = filteredTxs || getVisibleTransactions();
     const allTxs = getVisibleTransactions(); // Cached unfiltered list for bypass charts
     const style = getComputedStyle(document.documentElement);
-    const textPrimary = style.getPropertyValue('--text-primary').trim() || '#fff';
-    const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#aaa';
-    const textTertiary = style.getPropertyValue('--text-tertiary').trim() || '#666';
-    const chartGrid = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.06)';
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+                    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const textPrimary = style.getPropertyValue('--text-primary').trim() || (isDark ? '#f5f5f7' : '#1c1c1e');
+    const textSecondary = style.getPropertyValue('--text-secondary').trim() || (isDark ? '#aeaeb2' : '#636366');
+    const textTertiary = style.getPropertyValue('--text-tertiary').trim() || (isDark ? '#636366' : '#aeaeb2');
+    const chartGrid = style.getPropertyValue('--chart-grid').trim() || (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)');
     const accentColor = style.getPropertyValue('--accent').trim() || '#6C5CE7';
     const dangerColor = style.getPropertyValue('--danger').trim() || '#E17055';
     const successColor = style.getPropertyValue('--success').trim() || '#00B894';
     const warningColor = style.getPropertyValue('--warning').trim() || '#FDCB6E';
-    const bgGlass = style.getPropertyValue('--bg-glass').trim() || '#1c1c1e';
 
-    // Shared modern tooltip config
+    // Shared modern tooltip config — theme-aware
     const modernTooltip = {
-        backgroundColor: bgGlass + 'ee',
-        titleColor: textPrimary,
-        bodyColor: textSecondary,
-        borderColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: isDark ? 'rgba(44,44,46,0.96)' : 'rgba(255,255,255,0.96)',
+        titleColor: isDark ? '#f5f5f7' : '#1c1c1e',
+        bodyColor: isDark ? '#aeaeb2' : '#3a3a3c',
+        borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
         borderWidth: 1,
-        cornerRadius: 8,
-        padding: 10,
+        cornerRadius: 10,
+        padding: 12,
         displayColors: true,
         boxPadding: 4
     };
@@ -153,7 +154,7 @@ async function renderAnalyticsCharts(filteredTxs) {
                     pointRadius: 4,
                     pointHoverRadius: 7,
                     pointBackgroundColor: accentColor,
-                    pointBorderColor: bgGlass,
+                    pointBorderColor: isDark ? '#1c1c1e' : '#ffffff',
                     pointBorderWidth: 2
                 }]
             },
@@ -167,8 +168,8 @@ async function renderAnalyticsCharts(filteredTxs) {
                     tooltip: { ...modernTooltip, callbacks: { label: ctx => '  ' + formatCurrency(ctx.raw) } }
                 },
                 scales: {
-                    x: { ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
-                    y: { ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v), count: 4 }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true }
+                    x: { ticks: { color: textSecondary, font: { size: 10, family: fontFamily }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
+                    y: { ticks: { color: textSecondary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v), count: 4 }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true }
                 }
             }
         });
@@ -210,7 +211,7 @@ async function renderAnalyticsCharts(filteredTxs) {
                     tooltip: { ...modernTooltip, callbacks: { label: ctx => '  ' + formatCurrency(ctx.raw) } }
                 },
                 scales: {
-                    x: { ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v) }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true },
+                    x: { ticks: { color: textSecondary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v) }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true },
                     y: { ticks: { color: textSecondary, font: { size: 11, family: fontFamily } }, grid: { display: false }, border: { display: false } }
                 },
                 onClick: (e, elements) => {
@@ -309,8 +310,8 @@ async function renderAnalyticsCharts(filteredTxs) {
                     tooltip: { ...modernTooltip, callbacks: { label: ctx => '  ' + ctx.dataset.label + ': ' + formatCurrency(ctx.raw) } }
                 },
                 scales: {
-                    x: { stacked: true, ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
-                    y: { stacked: true, ticks: { color: textTertiary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v), count: 4 }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true }
+                    x: { stacked: true, ticks: { color: textSecondary, font: { size: 10, family: fontFamily }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
+                    y: { stacked: true, ticks: { color: textSecondary, font: { size: 10, family: fontFamily }, callback: v => formatCurrency(v), count: 4 }, grid: { color: chartGrid, drawBorder: false }, border: { display: false }, beginAtZero: true }
                 }
             }
         });
