@@ -676,8 +676,16 @@ function setupAuthButton() {
         // Use app's showConfirm if available, fallback to native confirm
         const doSignOut = () => {
             auth.signOut().then(() => {
+                // Preserve PIN auth for next login
+                try {
+                    const oldState = JSON.parse(localStorage.getItem('home_finlytics_state') || '{}');
+                    const authData = oldState.appLock || {};
+                    if (authData.pinHash || authData.credentialId) {
+                        localStorage.setItem('home_finlytics_auth', JSON.stringify(authData));
+                    }
+                } catch(e) {}
                 localStorage.removeItem('home_finlytics_state');
-                if (typeof showToast === 'function') showToast('Signed out. Data cleared for privacy.', 'info-circle');
+                if (typeof showToast === 'function') showToast('Signed out. You can login with PIN next time.', 'info-circle');
             });
         };
         if (typeof showConfirm === 'function') {

@@ -109,6 +109,17 @@ function loadState() {
         const saved = localStorage.getItem('home_finlytics_state');
         if (saved) Object.assign(state, JSON.parse(saved));
 
+        // Restore preserved PIN auth data (survives sign-out)
+        try {
+            const savedAuth = localStorage.getItem('home_finlytics_auth');
+            if (savedAuth) {
+                const authData = JSON.parse(savedAuth);
+                if (authData.pinHash || authData.credentialId) {
+                    state.appLock = { ...state.appLock, ...authData };
+                }
+            }
+        } catch(e) { /* ignore */ }
+
         // Ensure core structures exist if localStorage returned nulls
         if (!state.transactions) state.transactions = [];
         if (!state.categories) state.categories = { expense: [], groceries: [] };
@@ -2113,14 +2124,23 @@ function bindLockScreenEvents() {
     
     if (signOutBtn) {
         signOutBtn.addEventListener('click', async () => {
-            state.appLock = { enabled: false, credentialId: null, pinHash: null };
-            saveState();
-            document.getElementById('lockScreen').style.display = 'none';
+            // Preserve PIN auth data so user can log back in without Google
+            const authData = {
+                enabled: !!(state.appLock?.pinHash || state.appLock?.credentialId),
+                pinHash: state.appLock?.pinHash || null,
+                credentialId: state.appLock?.credentialId || null,
+                linkedEmail: state.appLock?.linkedEmail || '',
+                linkedDisplayName: state.appLock?.linkedDisplayName || ''
+            };
+            if (authData.pinHash || authData.credentialId) {
+                localStorage.setItem('home_finlytics_auth', JSON.stringify(authData));
+            }
+            
             try { 
-                // Use the global Firebase auth reference
                 const fbAuth = window._firebaseAuth;
                 if (fbAuth) await fbAuth.signOut();
             } catch(e) { /* ignore */ }
+            
             localStorage.removeItem('home_finlytics_state');
             window.location.reload();
         });
@@ -2158,6 +2178,8 @@ window.handleAuthStateChanged = async (user) => {
         if (state.appLock?.pinHash) {
             state.appLock.linkedEmail = user.email;
             state.appLock.linkedDisplayName = name;
+            // Clear the separate auth storage since main state now has it
+            localStorage.removeItem('home_finlytics_auth');
         }
         
         // Auto-add user's display name to payer list so it appears in manage payers
