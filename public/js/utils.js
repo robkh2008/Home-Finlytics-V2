@@ -74,44 +74,69 @@ function getCategoryIcon(catName, type) {
 // Subcategory icons — unique per subcategory name to avoid repetition
 const SUBCATEGORY_ICONS = {
     // House Rent
-    'House Rent': '🏠', 'Water Bill': '🚿', 'Electric Bill': '⚡', 'Motor Bill': '🏍️',
+    'House Rent': '🏠', 'Water Bill': '🚿', 'Electric Bill': '⚡', 'Motor Bill': '🪣',
+    'Maintenance Fee': '🔧', 'Property Tax': '🏛️', 'Security Deposit': '🔐', 'Repairs': '🛠️',
     // Groceries
     'Vegetables': '🥦', 'Fruits': '🍎', 'Fish': '🐟', 'Drinking Water': '🚰',
     'Meat': '🥩', 'Dairy & Eggs': '🥛', 'Grains': '🌾', 'Snacks': '🍿',
     'Beverages': '🥤', 'Pantry & Spices': '🧂', 'Household': '🧹',
+    'Frozen Foods': '🧊', 'Canned Goods': '🥫', 'Bread & Bakery': '🍞',
+    'Cooking Oil': '🫒', 'Organic': '🌱',
     // Food
     'Dining Out': '🍽️', 'Delivery & Takeout': '📦', 'Cafes & Coffee': '☕',
-    'Work Lunch': '🥪', 'Fast Food': '🍔',
+    'Work Lunch': '🥪', 'Fast Food': '🍔', 'Bakery': '🥐', 'Desserts': '🍰',
+    'Ice Cream': '🍦', 'Street Food': '🌮', 'Tea & Chai': '🫖', 'Juices & Smoothies': '🧃',
     // Transport
     'Fuel': '⛽', 'Public Transport': '🚌', 'Uber': '🚗', 'Bike & Car Maintenance': '🔧',
     'Parking': '🅿️', 'Bike & Car Wash': '🧽', 'Vehicle Insurance': '🛡️',
-    'Tolls': '🛣️', 'Flights': '✈️',
+    'Tolls': '🛣️', 'Flights': '✈️', 'Train': '🚄', 'Taxi': '🚕',
+    'Auto Rickshaw': '🛺', 'Metro': '🚇', 'Bus Pass': '🎫', 'Roadside Assistance': '🆘',
     // Entertainment
     'Movies': '🎬', 'Games': '🎮', 'Events': '🎪', 'Subscriptions': '📺', 'Hobbies': '🎨',
+    'Concerts': '🎤', 'Amusement Park': '🎡', 'Zoo': '🦁', 'Museum': '🏛️',
+    'Bowling': '🎳', 'Karaoke': '🎤', 'Streaming': '📱', 'Books & Comics': '📚', 'Board Games': '🎲',
     // Utilities
     'Electricity': '💡', 'Water': '💧', 'Internet': '🌐', 'Gas': '🔥',
-    'Phone Bill': '📱', 'Trash/Garbage': '🗑️',
+    'Phone Bill': '📱', 'Trash/Garbage': '🗑️', 'Sewer': '🚽', 'Home Security': '📹', 'Cable TV': '📺',
     // Shopping
     'Clothing': '👕', 'Electronics': '💻', 'Home Appliances': '🔌',
     'Furniture & Decor': '🛋️', 'Kitchen Appliances': '🍳', 'Gifts': '🎁', 'Accessories': '⌚',
+    'Footwear': '👟', 'Jewelry': '💍', 'Bags & Luggage': '👜', 'Cosmetics': '💄',
+    'Baby Products': '🍼', 'Pet Supplies': '🐾', 'Office Supplies': '📎',
     // Healthcare
     'Doctor': '🩺', 'Medicine': '💊', 'Health Insurance': '🏥', 'Gym': '🏋️',
-    'Dental': '🦷', 'Vision': '👓',
+    'Dental': '🦷', 'Vision': '👓', 'Vaccination': '💉', 'Blood Test': '🩸',
+    'X-Ray & Scan': '🩻', 'Surgery': '🔪', 'Physiotherapy': '🦵', 'Mental Health': '🧠',
+    'Ayurveda': '🌿', 'Homeopathy': '💧',
     // Education
     'Tuition': '📖', 'Books': '📚', 'Courses': '📝', 'Admission fees': '🎓', 'Stationery': '✏️',
+    'Hostel Fees': '🏘️', 'Exam Fees': '📋', 'School Supplies': '🎒', 'Online Course': '💻',
+    'Library Fees': '📚', 'Scholarship': '🎗️',
     // Personal Care
     'Haircut': '💇', 'Cosmetics': '💄', 'Hair Care': '🧴', 'Body Care': '🧼',
-    'Skin Care': '✨', 'Spa': '🧖',
+    'Skin Care': '✨', 'Spa': '🧖', 'Nail Care': '💅', 'Fragrance': '🌸',
+    'Tattoo': '🖋️', 'Massage': '💆', 'Salon': '💈', 'Barber': '✂️', 'Grooming': '🧔',
     // Debt & Loans
     'Credit Card': '💳', 'EMI': '📋', 'Personal Loan': '💰', 'Home Loan': '🔑',
-    'Car Loan': '🚙', 'Business Loan': '💼',
+    'Car Loan': '🚙', 'Business Loan': '💼', 'Education Loan': '🎓', 'Loan Repayment': '💸',
+    'Interest': '📈', 'Late Fee': '⚠️',
     // Marup
     'Rohen': '👥', 'Echan': '🤝', 'Abe Phanek': '🗣️',
+    'Monthly Dues': '📅', 'Savings Pool': '🏦', 'Emergency Fund': '🆘',
     // Miscellaneous
     'Other Expenses': '📄', 'Taxes': '🏛️', 'Home Transfer': '🚚',
-    'Donations': '❤️', 'Fines': '⚠️',
+    'Donations': '❤️', 'Fines': '⚠️', 'Legal Fees': '⚖️', 'Bank Charges': '🏦',
+    'ATM Fees': '🏧', 'Membership Fees': '🪪', 'Courier': '📦', 'Printing': '🖨️',
     // Landing
     'Money Lent': '💰', 'Returned': '✅', 'Written Off': '❌',
+    'Interest Earned': '📊', 'Loan Given': '📤', 'Loan Received': '📥',
+    // Electronics & Accessories
+    'Mobile Phone': '📱', 'Laptop': '💻', 'Tablet': '📟', 'Headphones': '🎧',
+    'Smartwatch': '⌚', 'Charger & Cable': '🔌', 'Power Bank': '🔋', 'Keyboard & Mouse': '🖱️',
+    'Monitor': '🖥️', 'Printer': '🖨️', 'Router': '📡', 'Webcam': '📹',
+    'Speaker': '🔊', 'USB Drive': '💾', 'Hard Drive': '💽', 'Phone Case': '📱',
+    'Screen Guard': '🛡️', 'VR Headset': '🥽', 'Gaming Console': '🎮', 'Camera': '📷',
+    'Tripod': '📐', 'Smart Home': '🏠', 'Fitness Tracker': '⌚',
 };
 
 function getSubcategoryIcon(subcatName, catName) {
