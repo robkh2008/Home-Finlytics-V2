@@ -1985,6 +1985,8 @@ function showLockScreen() {
     if (pinBtn) pinBtn.style.display = hasPin ? 'flex' : 'none';
     if (pinWrap) pinWrap.style.display = hasPin ? 'block' : 'block';
     if (signOutBtn) signOutBtn.style.display = 'flex';
+    const divider = document.getElementById('lockSignOutDivider');
+    if (divider) divider.style.display = 'flex';
     
     if (hasBio) {
         setTimeout(() => bioBtn?.click(), 300);
