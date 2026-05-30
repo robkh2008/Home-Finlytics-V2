@@ -62,7 +62,10 @@ function resetState() {
 let _saveStateTimer = null;
 let _localStorageTimer = null;
 function saveState() {
-    state.hasUnsyncedChanges = true;
+    // Only mark unsynced if there's a Firebase user to sync to (skip for PIN-only users)
+    if (state.currentUser) {
+        state.hasUnsyncedChanges = true;
+    }
     if (typeof updateDashboardSyncBadge === 'function') updateDashboardSyncBadge();
     
     // Invalidate visible transactions cache
@@ -446,7 +449,8 @@ window.onFirebaseDataReceived = onFirebaseDataReceived;
 window.updateDashboardSyncBadge = function() {
     const badge = document.getElementById('dashboardSyncBadge');
     if (badge) {
-        badge.style.display = state.hasUnsyncedChanges ? 'flex' : 'none';
+        // Only show sync badge when Firebase user is signed in; PIN-only users can't sync
+        badge.style.display = (state.hasUnsyncedChanges && state.currentUser) ? 'flex' : 'none';
     }
 };
 
@@ -456,7 +460,7 @@ window.triggerManualSync = function() {
         return;
     }
     if (!state.currentUser) {
-        if (typeof window.showLoginUI === 'function') window.showLoginUI();
+        if (typeof showToast === 'function') showToast('Sign in with Google to enable cloud sync.', 'cloud');
         return;
     }
     const icon = document.querySelector('#retrySyncBtn i');
